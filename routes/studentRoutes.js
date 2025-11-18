@@ -375,20 +375,44 @@ router.get('/travels/:id', (req, res) => {
 
 // POST create booking
 router.post('/bookings', (req, res) => {
-  const { student_id, travel_id, pickup_location, dropoff_location, num_passengers } = req.body;
+  const { 
+    student_id, 
+    travel_id, 
+    pickup_location, 
+    dropoff_location, 
+    num_passengers,
+    pickup_lat,
+    pickup_lng,
+    pickup_address,
+    dropoff_lat,
+    dropoff_lng,
+    dropoff_address
+  } = req.body;
   
   const query = `
-    INSERT INTO bookings (student_id, travel_id, pickup_location, dropoff_location, 
-                         num_passengers, booking_status)
-    VALUES (?, ?, ?, ?, ?, 'pending')
+    INSERT INTO bookings (
+      student_id, travel_id, pickup_location, dropoff_location, 
+      num_passengers, booking_status,
+      pickup_lat, pickup_lng, pickup_address,
+      dropoff_lat, dropoff_lng, dropoff_address
+    )
+    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
   `;
   
-  db.query(query, [student_id, travel_id, pickup_location, dropoff_location, num_passengers], (err, result) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
+  db.query(
+    query, 
+    [
+      student_id, travel_id, pickup_location, dropoff_location, num_passengers,
+      pickup_lat, pickup_lng, pickup_address,
+      dropoff_lat, dropoff_lng, dropoff_address
+    ], 
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ success: true, booking_id: result.insertId });
     }
-    res.json({ success: true, booking_id: result.insertId });
-  });
+  );
 });
 
 // GET student bookings

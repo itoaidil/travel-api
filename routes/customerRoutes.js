@@ -175,6 +175,12 @@ router.post('/booking', (req, res) => {
     total_price,
     pickup_location,
     dropoff_location,
+    pickup_lat,
+    pickup_lng,
+    pickup_address,
+    dropoff_lat,
+    dropoff_lng,
+    dropoff_address,
   } = req.body;
 
   // Validation
@@ -236,16 +242,20 @@ router.post('/booking', (req, res) => {
       // Generate booking code
       const bookingCode = 'BK' + Date.now();
 
-      // Insert booking
+      // Insert booking with coordinates
       const bookingQuery = `
         INSERT INTO bookings 
-        (booking_code, student_id, customer_id, travel_id, num_passengers, total_price, payment_method, pickup_location, dropoff_location, booking_status, payment_status)
-        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid')
+        (booking_code, student_id, customer_id, travel_id, num_passengers, total_price, payment_method, 
+         pickup_location, dropoff_location, pickup_lat, pickup_lng, pickup_address, 
+         dropoff_lat, dropoff_lng, dropoff_address, booking_status, payment_status)
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unpaid')
       `;
 
       db.query(
         bookingQuery,
-        [bookingCode, customer_id, travel_id, selected_seats.length, total_price, payment_method, pickup_location, dropoff_location],
+        [bookingCode, customer_id, travel_id, selected_seats.length, total_price, payment_method, 
+         pickup_location, dropoff_location, pickup_lat, pickup_lng, pickup_address, 
+         dropoff_lat, dropoff_lng, dropoff_address],
         (err, bookingResult) => {
           if (err) {
             return db.rollback(() => {
