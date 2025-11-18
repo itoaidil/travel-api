@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 const db = require('./config/database');
 
@@ -16,70 +18,79 @@ app.use('/api/driver', require('./routes/driverRoutes'));
 app.use('/api/po', require('./routes/poRoutes'));
 app.use('/api/customer', require('./routes/customerRoutes'));
 
-// Test database connection
+// Test database connection and run base migrations
 db.query('SELECT 1', (err, results) => {
   if (err) {
     console.error('Database connection failed:', err);
   } else {
     console.log('Database connected successfully');
     
-    // Ensure reviews table exists (simple schema) and seed demo data if empty
-    const createReviewsTable = `CREATE TABLE IF NOT EXISTS po_reviews (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      po_id INT NOT NULL,
-      rating TINYINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
-      comment TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX (po_id)
-    )`;
+    // Run base table migrations first
+    const baseSQLPath = path.join(__dirname, 'migrations', '00_create_base_tables.sql');
     
-    // Seat selections table to track which seats are booked for each travel
-    const createSeatSelectionsTable = `CREATE TABLE IF NOT EXISTS seat_selections (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      booking_id INT NOT NULL,
-      seat_number VARCHAR(10) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX (booking_id),
-      FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
-    )`;
-    
-    db.query(createReviewsTable, (err2) => {
-      if (err2) {
-        console.error('Failed ensuring po_reviews table:', err2.message);
-        return;
-      }
+    if (fs.existsSync(baseSQLPath)) {
+      const baseSQL = fs.readFileSync(baseSQLPath, 'utf8');
+      const statements = baseSQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
       
-      db.query(createSeatSelectionsTable, (err3) => {
-        if (err3) {
-          console.error('Failed ensuring seat_selections table:', err3.message);
-          return;
-        }
-        console.log('Tables verified/created: po_reviews, seat_selections');
-      });
+      let pendingStatements = statements.length;
       
-      db.query('SELECT COUNT(*) as cnt FROM po_reviews', (err3, rows) => {
-        if (err3) {
-          console.error('Count po_reviews failed:', err3.message);
-          return;
-        }
-        const count = rows[0].cnt;
-        if (count === 0) {
-          // Seed a few demo reviews per active PO for UI purposes
-          const seedQuery = `INSERT INTO po_reviews (po_id, rating, comment)
-            SELECT p.id, FLOOR(3 + RAND()*2), CONCAT('Sample review for ', p.po_name)
-            FROM pos p WHERE p.is_active = 1 LIMIT 15`;
-          db.query(seedQuery, (err4) => {
-            if (err4) {
-              console.error('Seeding po_reviews failed:', err4.message);
-            } else {
-              console.log('Seeded demo po_reviews data');
-            }
-          });
-        }
+      statements.forEach((statement) => {
+        db.query(statement, (err) => {
+          pendingStatements--;
+          if (err && !err.message.includes('already exists')) {
+            console.error('Migration statement failed:', err.message);
+          }
+          
+          // Once all base migrations done, create additional tables
+          if (pendingStatements === 0) {
+            console.log('Base tables verified');
+            createAdditionalTables();
+          }
+        });
       });
-    });
+    } else {
+      // If migration file doesn't exist, proceed with additional tables
+      createAdditionalTables();
+    }
   }
 });
+
+function createAdditionalTables() {
+  // Ensure reviews table exists
+  const createReviewsTable = `CREATE TABLE IF NOT EXISTS po_reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    po_id INT NOT NULL,
+    rating TINYINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (po_id),
+    FOREIGN KEY (po_id) REFERENCES pos(id) ON DELETE CASCADE
+  )`;
+  
+  // Booking seats table
+  const createBookingSeatsTable = `CREATE TABLE IF NOT EXISTS booking_seats (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id INT NOT NULL,
+    seat_number VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (booking_id),
+    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
+  )`;
+  
+  db.query(createReviewsTable, (err2) => {
+    if (err2 && !err2.message.includes('already exists')) {
+      console.error('Failed ensuring po_reviews table:', err2.message);
+    }
+  });
+  
+  db.query(createBookingSeatsTable, (err3) => {
+    if (err3 && !err3.message.includes('already exists')) {
+      console.error('Failed ensuring booking_seats table:', err3.message);
+    } else {
+      console.log('Additional tables verified: po_reviews, booking_seats');
+    }
+  });
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
