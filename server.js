@@ -90,6 +90,8 @@ function createAdditionalTables() {
       console.log('Additional tables verified: po_reviews, booking_seats');
     }
   });
+  
+  console.log('✅ Database initialization complete');
 }
 
 // Health check endpoint
