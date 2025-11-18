@@ -139,3 +139,17 @@ CREATE TABLE IF NOT EXISTS po_admins (
   FOREIGN KEY (po_id) REFERENCES pos(id) ON DELETE CASCADE,
   UNIQUE KEY unique_user_po (user_id, po_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 9. Vehicle Schedules table
+CREATE TABLE IF NOT EXISTS vehicle_schedules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vehicle_id INT NOT NULL,
+  destination VARCHAR(255) NOT NULL,
+  departure_times JSON NOT NULL COMMENT 'Array of departure times in HH:MM format',
+  is_active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+  INDEX idx_vehicle_destination (vehicle_id, destination),
+  INDEX idx_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
