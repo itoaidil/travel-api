@@ -26,13 +26,13 @@ router.get('/suggestions', (req, res) => {
   });
 });
 
-// GET departure cities - get all cities from cities table
+// GET departure cities - get distinct origin cities from travels
 router.get('/departure-cities', (req, res) => {
   const query = `
-    SELECT name 
-    FROM cities 
-    WHERE is_active = 1
-    ORDER BY name
+    SELECT DISTINCT origin as name
+    FROM travels 
+    WHERE status = 'scheduled'
+    ORDER BY origin
   `;
   
   db.query(query, (err, results) => {
@@ -44,7 +44,7 @@ router.get('/departure-cities', (req, res) => {
   });
 });
 
-// GET destination cities - get all cities from cities table (excluding selected departure city)
+// GET destination cities - get distinct destinations based on origin from travels
 router.get('/destination-cities', (req, res) => {
   const { from } = req.query;
   
@@ -53,10 +53,10 @@ router.get('/destination-cities', (req, res) => {
   }
   
   const query = `
-    SELECT name 
-    FROM cities 
-    WHERE is_active = 1 AND name != ?
-    ORDER BY name
+    SELECT DISTINCT destination as name
+    FROM travels 
+    WHERE status = 'scheduled' AND origin = ?
+    ORDER BY destination
   `;
   
   db.query(query, [from], (err, results) => {
