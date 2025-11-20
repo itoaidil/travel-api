@@ -20,11 +20,10 @@ app.use('/api/customer', require('./routes/customerRoutes'));
 app.use('/api/payment', require('./routes/paymentRoutes'));
 
 // Test database connection and run base migrations
-db.query('SELECT 1', (err, results) => {
-  if (err) {
-    console.error('Database connection failed:', err);
-  } else {
+db.getConnection()
+  .then(connection => {
     console.log('Database connected successfully');
+    connection.release();
     
     // Run base table migrations first
     const baseSQLPath = path.join(__dirname, 'migrations', '00_create_base_tables.sql');
@@ -33,30 +32,28 @@ db.query('SELECT 1', (err, results) => {
       const baseSQL = fs.readFileSync(baseSQLPath, 'utf8');
       const statements = baseSQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
       
-      let pendingStatements = statements.length;
-      
-      statements.forEach((statement) => {
-        db.query(statement, (err) => {
-          pendingStatements--;
-          if (err && !err.message.includes('already exists')) {
-            console.error('Migration statement failed:', err.message);
-          }
-          
-          // Once all base migrations done, create additional tables
-          if (pendingStatements === 0) {
-            console.log('Base tables verified');
-            createAdditionalTables();
-          }
-        });
+      Promise.all(
+        statements.map(statement => 
+          db.query(statement).catch(err => {
+            if (!err.message.includes('already exists')) {
+              console.error('Migration statement failed:', err.message);
+            }
+          })
+        )
+      ).then(() => {
+        console.log('Base tables verified');
+        createAdditionalTables();
       });
     } else {
       // If migration file doesn't exist, proceed with additional tables
       createAdditionalTables();
     }
-  }
-});
+  })
+  .catch(err => {
+    console.error('Database connection failed:', err);
+  });
 
-function createAdditionalTables() {
+async function createAdditionalTables() {
   // Ensure customers table exists (used by customer registration/login)
   const createCustomersTable = `CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -92,27 +89,6 @@ function createAdditionalTables() {
     FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
   )`;
   
-  // Create customers table first
-  db.query(createCustomersTable, (err0) => {
-    if (err0 && !err0.message.includes('already exists')) {
-      console.error('Failed ensuring customers table:', err0.message);
-    }
-  });
-
-  db.query(createReviewsTable, (err2) => {
-    if (err2 && !err2.message.includes('already exists')) {
-      console.error('Failed ensuring po_reviews table:', err2.message);
-    }
-  });
-  
-  db.query(createBookingSeatsTable, (err3) => {
-    if (err3 && !err3.message.includes('already exists')) {
-      console.error('Failed ensuring booking_seats table:', err3.message);
-    } else {
-      console.log('Additional tables verified: po_reviews, booking_seats');
-    }
-  });
-  
   // Ensure student_auth table exists
   const createStudentAuthTable = `CREATE TABLE IF NOT EXISTS student_auth (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -127,15 +103,37 @@ function createAdditionalTables() {
     INDEX (student_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`;
   
-  db.query(createStudentAuthTable, (err4) => {
-    if (err4 && !err4.message.includes('already exists')) {
-      console.error('Failed ensuring student_auth table:', err4.message);
-    } else {
-      console.log('✅ student_auth table verified');
-    }
-  });
-  
-  console.log('✅ Database initialization complete');
+  try {
+    await db.query(createCustomersTable).catch(err => {
+      if (!err.message.includes('already exists')) {
+        console.error('Failed ensuring customers table:', err.message);
+      }
+    });
+
+    await db.query(createReviewsTable).catch(err => {
+      if (!err.message.includes('already exists')) {
+        console.error('Failed ensuring po_reviews table:', err.message);
+      }
+    });
+    
+    await db.query(createBookingSeatsTable).catch(err => {
+      if (!err.message.includes('already exists')) {
+        console.error('Failed ensuring booking_seats table:', err.message);
+      }
+    });
+    
+    await db.query(createStudentAuthTable).catch(err => {
+      if (!err.message.includes('already exists')) {
+        console.error('Failed ensuring student_auth table:', err.message);
+      }
+    });
+    
+    console.log('Additional tables verified: po_reviews, booking_seats');
+    console.log('✅ student_auth table verified');
+    console.log('✅ Database initialization complete');
+  } catch (error) {
+    console.error('Error creating additional tables:', error);
+  }
 }
 
 // Health check endpoint
