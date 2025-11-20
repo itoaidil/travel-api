@@ -2,6 +2,29 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 
+// TEMPORARY: Seed student_auth data (remove after first run)
+router.post('/seed-auth-data', (req, res) => {
+  const seedSQL = `
+    INSERT INTO student_auth (student_id, email, password, is_active) 
+    VALUES 
+    (1, 'a@gmail.com', '123456', 1),
+    (1, 'student1@email.com', 'student123', 1),
+    (1, 'student2@email.com', 'student123', 1)
+    ON DUPLICATE KEY UPDATE password = VALUES(password), is_active = VALUES(is_active)
+  `;
+  
+  db.query(seedSQL, (err, result) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Student auth data seeded', 
+      affectedRows: result.affectedRows 
+    });
+  });
+});
+
 // GET travel destination suggestions (autocomplete) - from cities table
 router.get('/suggestions', (req, res) => {
   const { query } = req.query;
