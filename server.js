@@ -56,6 +56,20 @@ db.query('SELECT 1', (err, results) => {
 });
 
 function createAdditionalTables() {
+  // Ensure customers table exists (used by customer registration/login)
+  const createCustomersTable = `CREATE TABLE IF NOT EXISTS customers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(20) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (email),
+    INDEX (phone)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`;
+
   // Ensure reviews table exists
   const createReviewsTable = `CREATE TABLE IF NOT EXISTS po_reviews (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -77,6 +91,13 @@ function createAdditionalTables() {
     FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
   )`;
   
+  // Create customers table first
+  db.query(createCustomersTable, (err0) => {
+    if (err0 && !err0.message.includes('already exists')) {
+      console.error('Failed ensuring customers table:', err0.message);
+    }
+  });
+
   db.query(createReviewsTable, (err2) => {
     if (err2 && !err2.message.includes('already exists')) {
       console.error('Failed ensuring po_reviews table:', err2.message);
@@ -88,6 +109,28 @@ function createAdditionalTables() {
       console.error('Failed ensuring booking_seats table:', err3.message);
     } else {
       console.log('Additional tables verified: po_reviews, booking_seats');
+    }
+  });
+  
+  // Ensure student_auth table exists
+  const createStudentAuthTable = `CREATE TABLE IF NOT EXISTS student_auth (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    INDEX (email),
+    INDEX (student_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`;
+  
+  db.query(createStudentAuthTable, (err4) => {
+    if (err4 && !err4.message.includes('already exists')) {
+      console.error('Failed ensuring student_auth table:', err4.message);
+    } else {
+      console.log('✅ student_auth table verified');
     }
   });
   

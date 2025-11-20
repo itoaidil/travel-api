@@ -200,13 +200,15 @@ async function seedRailway() {
     console.log('   Student: student1@mail.com / student123');
 
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    process.exit(1);
+    console.error('⚠️  Seeding encountered errors:', error.message);
+    console.log('ℹ️  Some data may have been seeded. Check logs above.');
+    // Don't exit with error code - let server start anyway
   } finally {
     if (connection) {
       await connection.end();
       console.log('\n✅ Connection closed');
     }
+    console.log('✅ Seeding script completed. Starting server...\n');
     process.exit(0);
   }
 }
