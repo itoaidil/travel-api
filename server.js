@@ -17,6 +17,7 @@ app.use('/api/student', require('./routes/studentRoutes'));
 app.use('/api/driver', require('./routes/driverRoutes'));
 app.use('/api/po', require('./routes/poRoutes'));
 app.use('/api/customer', require('./routes/customerRoutes'));
+app.use('/api/payment', require('./routes/paymentRoutes'));
 
 // Test database connection and run base migrations
 db.query('SELECT 1', (err, results) => {
