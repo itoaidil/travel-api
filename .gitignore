@@ -1,4 +1,81 @@
+# Dependencies
 node_modules/
+package-lock.json
+yarn.lock
+
+# Environment variables
 .env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Database
+*.sqlite
+*.db
+db_backups/
+*.sql
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*_backup_*/
+backups/
+
+# Railway specific
+.railway/
+
+# Sensitive credentials
+PO_LOGIN_CREDENTIALS.md
+STUDENT_LOGIN_CREDENTIALS.md
+*CREDENTIALS*.md
+
+# API keys and secrets
+midtrans_*.json
+*_keys.json
+secrets.json
+
+# Testing
+test-results/
+playwright-report/

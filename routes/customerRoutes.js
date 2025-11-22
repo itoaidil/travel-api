@@ -142,8 +142,10 @@ router.post('/register', async (req, res) => {
 });
 
 // Login customer
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
+
+  console.log(`[LOGIN] Request: email=${email}`);
 
   // Validation
   if (!email || !password) {
@@ -153,30 +155,25 @@ router.post('/login', (req, res) => {
     });
   }
 
-  const query = 'SELECT * FROM customers WHERE email = ? AND is_active = 1';
-
-  db.query(query, [email], async (err, results) => {
-    if (err) {
-      console.error('Error during login:', err);
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan server'
-      });
-    }
-
-    if (results.length === 0) {
+  try {
+    const [rows] = await db.query('SELECT * FROM customers WHERE email = ? AND is_active = 1', [email]);
+    if (!rows || rows.length === 0) {
+      console.log(`[LOGIN] User not found: ${email}`);
       return res.status(401).json({
         success: false,
         message: 'Email atau password salah'
       });
     }
+    const customer = rows[0];
 
-    const customer = results[0];
-
-    // Compare password
+    // Compare password (bcrypt)
+    const start = Date.now();
     const isPasswordValid = await bcrypt.compare(password, customer.password);
+    const duration = Date.now() - start;
+    console.log(`[LOGIN] Bcrypt compare duration: ${duration}ms`);
 
     if (!isPasswordValid) {
+      console.log(`[LOGIN] Password invalid for: ${email}`);
       return res.status(401).json({
         success: false,
         message: 'Email atau password salah'
@@ -184,6 +181,7 @@ router.post('/login', (req, res) => {
     }
 
     // Return customer data (without password)
+    console.log(`[LOGIN] Success: ${email}`);
     res.json({
       success: true,
       message: 'Login berhasil',
@@ -194,7 +192,13 @@ router.post('/login', (req, res) => {
         phone: customer.phone
       }
     });
-  });
+  } catch (err) {
+    console.error('[LOGIN] Error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server'
+    });
+  }
 });
 
 // Get customer profile
