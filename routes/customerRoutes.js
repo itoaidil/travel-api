@@ -3,6 +3,67 @@ const router = express.Router();
 const db = require('../config/database');
 const bcrypt = require('bcryptjs');
 
+// TEST: Simple database query without bcrypt
+router.get('/test-db', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT COUNT(*) as count FROM customers');
+    res.json({
+      success: true,
+      message: 'Database connection OK',
+      customer_count: rows[0].count,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Database error: ' + error.message
+    });
+  }
+});
+
+// TEST: Get all customers (without password)
+router.get('/test-customers', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT id, full_name, email, phone, is_active FROM customers LIMIT 10');
+    res.json({
+      success: true,
+      data: rows
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Database error: ' + error.message
+    });
+  }
+});
+
+// TEST: Simple login without bcrypt (TEMPORARY - for debugging only)
+router.post('/test-login', async (req, res) => {
+  const { email } = req.body;
+  
+  try {
+    const [rows] = await db.query('SELECT id, full_name, email, phone FROM customers WHERE email = ? AND is_active = 1', [email]);
+    
+    if (rows.length === 0) {
+      return res.json({
+        success: false,
+        message: 'Email not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Customer found',
+      data: rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Database error: ' + error.message
+    });
+  }
+});
+
 // Register new customer
 router.post('/register', async (req, res) => {
   const { full_name, email, phone, password } = req.body;
