@@ -18,6 +18,8 @@ app.use('/api/driver', require('./routes/driverRoutes'));
 app.use('/api/po', require('./routes/poRoutes'));
 app.use('/api/customer', require('./routes/customerRoutes'));
 app.use('/api/payment', require('./routes/paymentRoutes'));
+app.use('/api/locations', require('./routes/locations'));
+app.use('/api/migrate', require('./routes/migrate'));
 
 // Test database connection and run base migrations
 db.getConnection()
