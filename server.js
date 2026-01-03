@@ -24,35 +24,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
-app.use('/api/student', require('./routes/studentRoutes'));
-app.use('/api/driver', require('./routes/driverRoutes'));
-app.use('/api/drivers', require('./routes/driverRoutes')); // Alias untuk driver matching
-app.use('/api/driver-simple', require('./routes/driver_simple_login'));
-app.use('/api/po', require('./routes/poRoutes')); // This handles /api/po/* routes
-// IMPORTANT: Admin routes MUST come before generic /api routes to avoid conflicts
-app.use('/api/admin', require('./routes/adminSetup')); // Admin setup for on-demand system
-app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin driver verification
-app.use('/api', require('./routes/poRoutes')); // This handles /api/vehicles, /api/drivers, /api/travels (JWT-based)
-app.use('/api/customer', require('./routes/customerRoutes'));
-app.use('/api/auth', require('./routes/otpRoutes')); // OTP authentication (register, verify, resend)
-app.use('/api/bookings', require('./routes/bookingRoutes')); // Booking management for PO
-app.use('/api/payment', require('./routes/paymentRoutes'));
-app.use('/api/locations', require('./routes/locations'));
-app.use('/api/migrate', require('./routes/migrate'));
-app.use('/api/migrate', require('./routes/migrate_tracking')); // Migration 005: Location tracking
+// Routes - Driver App Only (minimal setup)
+// Comment out missing routes to avoid crashes
+// TODO: Restore other routes when files are available
+
+// Driver endpoints (NEW - for driver app)
 app.use('/api/driver-location', require('./routes/trackingRoutes'));
 app.use('/api/broadcast', require('./routes/broadcastRoutes')); // Driver broadcast accept/reject
 app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status & FCM
-app.use('/api/upload', require('./routes/uploadRoutes')); // Upload files to Cloudinary
-app.use('/api/notifications', require('./routes/notificationRoutes')); // Notification system
-app.use('/api/admin/migrate', require('./routes/adminMigrationRoutes')); // Admin migration endpoints
-app.use('/api/migration', require('./routes/migrationRoutes')); // One-time migrations (REMOVE AFTER USE!)
-app.use('/api/on-demand/driver', require('./routes/onDemandDriver')); // On-demand driver registration
-app.use('/api/pricing', require('./routes/pricingRoutes')); // Dynamic pricing calculation
-app.use('/api/migration/pricing', require('./routes/pricingMigration')); // TEMP: Pricing migration
-app.use('/api/migration/payment', require('./routes/paymentMigration')); // TEMP: Payment columns migration
-app.use('/api/chat', require('./routes/chatRoutes')); // Chat messaging system
+
+// Commented out routes (files not in repo):
+// app.use('/api/student', require('./routes/studentRoutes'));
+// app.use('/api/driver', require('./routes/driverRoutes'));
+// app.use('/api/drivers', require('./routes/driverRoutes'));
+// app.use('/api/driver-simple', require('./routes/driver_simple_login'));
+// app.use('/api/po', require('./routes/poRoutes'));
+// app.use('/api/admin', require('./routes/adminSetup'));
+// app.use('/api/admin', require('./routes/adminDriverRoutes'));
+// app.use('/api', require('./routes/poRoutes'));
+// app.use('/api/customer', require('./routes/customerRoutes'));
+// app.use('/api/auth', require('./routes/otpRoutes'));
+// app.use('/api/bookings', require('./routes/bookingRoutes'));
+// app.use('/api/payment', require('./routes/paymentRoutes'));
+// app.use('/api/locations', require('./routes/locations'));
+// app.use('/api/migrate', require('./routes/migrate'));
+// app.use('/api/migrate', require('./routes/migrate_tracking'));
+// app.use('/api/upload', require('./routes/uploadRoutes'));
+// app.use('/api/notifications', require('./routes/notificationRoutes'));
+// app.use('/api/admin/migrate', require('./routes/adminMigrationRoutes'));
+// app.use('/api/migration', require('./routes/migrationRoutes'));
+// app.use('/api/on-demand/driver', require('./routes/onDemandDriver'));
+// app.use('/api/pricing', require('./routes/pricingRoutes'));
+// app.use('/api/migration/pricing', require('./routes/pricingMigration'));
+// app.use('/api/migration/payment', require('./routes/paymentMigration'));
+// app.use('/api/chat', require('./routes/chatRoutes'));
 
 // TEMPORARY: Manual migration 005 endpoint (REMOVE AFTER USE!)
 app.post('/api/migration/run-005', async (req, res) => {
