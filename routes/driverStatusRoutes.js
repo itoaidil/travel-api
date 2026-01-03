@@ -1,0 +1,170 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../config/database');
+
+/**
+ * POST /api/driver/online-status
+ * Toggle driver online/offline status
+ */
+router.post('/online-status', async (req, res) => {
+  const { driver_id, is_online } = req.body;
+
+  if (!driver_id || is_online === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields: driver_id, is_online'
+    });
+  }
+
+  try {
+    // Update driver online status
+    const [result] = await db.query(
+      `UPDATE independent_drivers 
+       SET is_online = ?, 
+           last_online_at = IF(? = true, NOW(), last_online_at)
+       WHERE driver_id = ?`,
+      [is_online, is_online, driver_id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      driver_id: driver_id,
+      is_online: is_online,
+      message: is_online ? 'Driver is now online' : 'Driver is now offline'
+    });
+
+  } catch (error) {
+    console.error('Error updating driver status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error updating status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/driver/register-fcm
+ * Register FCM token for push notifications
+ */
+router.post('/register-fcm', async (req, res) => {
+  const { driver_id, fcm_token, device_type } = req.body;
+
+  if (!driver_id || !fcm_token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields: driver_id, fcm_token'
+    });
+  }
+
+  try {
+    // Check if driver exists
+    const [drivers] = await db.query(
+      'SELECT driver_id FROM independent_drivers WHERE driver_id = ?',
+      [driver_id]
+    );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    // Update or insert FCM token
+    await db.query(
+      `UPDATE independent_drivers 
+       SET fcm_token = ?, 
+           device_type = ?,
+           fcm_updated_at = NOW()
+       WHERE driver_id = ?`,
+      [fcm_token, device_type || 'android', driver_id]
+    );
+
+    res.json({
+      success: true,
+      driver_id: driver_id,
+      message: 'FCM token registered successfully'
+    });
+
+  } catch (error) {
+    console.error('Error registering FCM token:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error registering token',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/driver/profile
+ * Get driver profile with stats
+ */
+router.get('/profile', async (req, res) => {
+  const { driver_id } = req.query;
+
+  if (!driver_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required parameter: driver_id'
+    });
+  }
+
+  try {
+    const [drivers] = await db.query(
+      `SELECT 
+        driver_id,
+        full_name,
+        phone,
+        email,
+        nik,
+        vehicle_type,
+        vehicle_plate,
+        vehicle_color,
+        service_type_allowed,
+        is_active,
+        is_online,
+        rating,
+        total_trips,
+        total_earnings,
+        total_rejections,
+        acceptance_rate,
+        current_active_orders,
+        created_at,
+        last_online_at
+       FROM independent_drivers 
+       WHERE driver_id = ?`,
+      [driver_id]
+    );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      driver: drivers[0]
+    });
+
+  } catch (error) {
+    console.error('Error fetching driver profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching profile',
+      error: error.message
+    });
+  }
+});
+
+module.exports = router;
