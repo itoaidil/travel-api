@@ -1,0 +1,10 @@
+--- a/server.js
++++ b/server.js
+@@ -16,6 +16,7 @@
+ // Routes
+ app.use('/api/student', require('./routes/studentRoutes'));
+ app.use('/api/driver', require('./routes/driverRoutes'));
++app.use('/api/driver-simple', require('./routes/driver_simple_login'));
+ app.use('/api/po', require('./routes/poRoutes'));
+ app.use('/api/customer', require('./routes/customerRoutes'));
+ app.use('/api/payment', require('./routes/paymentRoutes'));
