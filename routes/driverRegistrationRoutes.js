@@ -54,7 +54,7 @@ router.post('/register', async (req, res) => {
       rt, rw, kelurahan, kecamatan, agama, maritalStatus, email,
       vehicleType, vehicleColor, vehicleYear,
       bankName, accountNumber, accountName,
-      ktpPhotoUrl, selfiePhotoUrl, password
+      ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl, stnkPhotoUrl, password
     } = req.body;
 
     // Validate required fields
@@ -70,6 +70,16 @@ router.post('/register', async (req, res) => {
         success: false,
         message: 'NIK, KTP photo, and selfie photo are required'
       });
+    }
+    
+    // Validate SIM & STNK untuk kendaraan bermotor
+    if (vehicleType !== 'bicycle' && vehicleType !== 'skateboard' && vehicleType !== 'scooter') {
+      if (!simPhotoUrl || !stnkPhotoUrl) {
+        return res.status(400).json({
+          success: false,
+          message: 'SIM and STNK photos are required for motor vehicles'
+        });
+      }
     }
 
     if (password.length < 6) {
@@ -104,15 +114,15 @@ router.post('/register', async (req, res) => {
         kelurahan, kecamatan, agama, marital_status, email,
         vehicle_type, vehicle_color, vehicle_year,
         bank_name, account_number, account_name,
-        ktp_photo_url, selfie_photo_url, password,
+        ktp_photo_url, selfie_photo_url, license_photo_url, stnk_photo_url, password,
         is_active, status, is_online, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         phone, fullName, nik, birthPlace, birthDate, address, rt, rw,
         kelurahan, kecamatan, agama, maritalStatus, email,
-        vehicleType || 'motorcycle', vehicleColor, vehicleYear,
+        vehicleType || 'bicycle', vehicleColor, vehicleYear,
         bankName, accountNumber, accountName,
-        ktpPhotoUrl, selfiePhotoUrl, hashedPassword,
+        ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl || null, stnkPhotoUrl || null, hashedPassword,
         0, // not active until admin approval
         'pending_approval',
         0  // offline
