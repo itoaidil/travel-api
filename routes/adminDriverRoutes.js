@@ -109,13 +109,13 @@ router.get('/drivers-stats', async (req, res) => {
   try {
     const db = req.db;
     
-    // Get counts by status
+    // Get counts by status (ENUM: pending, active, inactive, offline)
     const [stats] = await db.query(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN d.status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN d.status = 'approved' AND u.is_active = 1 THEN 1 ELSE 0 END) as approved,
-        SUM(CASE WHEN d.status = 'rejected' THEN 1 ELSE 0 END) as rejected
+        SUM(CASE WHEN d.status = 'active' AND u.is_active = 1 THEN 1 ELSE 0 END) as approved,
+        SUM(CASE WHEN d.status IN ('inactive', 'offline') THEN 1 ELSE 0 END) as rejected
       FROM independent_drivers d
       LEFT JOIN users u ON d.user_id = u.id
       WHERE u.user_type = 'driver'
@@ -333,10 +333,10 @@ router.post('/drivers/:id/reject', async (req, res) => {
     
     const driver = drivers[0];
     
-    // Update driver status
+    // Update driver status to 'inactive' (rejected)
     await db.query(
       `UPDATE independent_drivers 
-       SET status = 'rejected', is_verified = 0, updated_at = NOW()
+       SET status = 'inactive', is_verified = 0, updated_at = NOW()
        WHERE id = ?`,
       [driverId]
     );
@@ -385,10 +385,10 @@ router.delete('/drivers/:id', async (req, res) => {
       });
     }
     
-    // Soft delete: update status to rejected and deactivate
+    // Soft delete: update status to inactive and deactivate
     await db.query(
       `UPDATE independent_drivers 
-       SET status = 'rejected', is_verified = 0, updated_at = NOW()
+       SET status = 'inactive', is_verified = 0, updated_at = NOW()
        WHERE id = ?`,
       [driverId]
     );
