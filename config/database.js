@@ -18,6 +18,7 @@ const database = resolveRef(process.env.MYSQLDATABASE) || resolveRef(process.env
 const port = Number(resolveRef(process.env.MYSQLPORT) || resolveRef(process.env.DB_PORT) || 3306);
 
 // Create connection pool for better performance and auto-reconnect
+// Reduced timeouts to prevent startup hang on Railway
 const pool = mysql.createPool({
   host,
   user,
@@ -25,13 +26,13 @@ const pool = mysql.createPool({
   database,
   port,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  connectTimeout: 10000, // 10 seconds timeout for initial connection
-  acquireTimeout: 10000, // 10 seconds timeout to acquire connection from pool
-  timeout: 10000, // 10 seconds query timeout
+  connectTimeout: 3000, // 3 seconds timeout (reduced from 10s)
+  acquireTimeout: 3000, // 3 seconds timeout to acquire connection from pool
+  timeout: 5000, // 5 seconds query timeout
 });
 
 // Minimal, safe startup logging (no secrets)
