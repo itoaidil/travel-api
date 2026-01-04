@@ -1,6 +1,17 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
+// Check if we're in Railway environment
+const isRailway = process.env.RAILWAY_ENVIRONMENT_NAME !== undefined;
+
+if (!isRailway) {
+  // Only load .env file if running locally
+  require('dotenv').config();
+}
+
+// Log which environment we're in
+console.log(`Running in: ${isRailway ? 'Railway' : 'Local'} environment`);
+
 // Resolve values like "${VAR}" to the actual env var value if present
 function resolveRef(val) {
   if (typeof val === 'string' && /^\$\{[A-Z0-9_]+\}$/.test(val)) {
@@ -16,6 +27,13 @@ const user = resolveRef(process.env.MYSQLUSER) || resolveRef(process.env.DB_USER
 const password = resolveRef(process.env.MYSQLPASSWORD) || resolveRef(process.env.DB_PASSWORD) || '';
 const database = resolveRef(process.env.MYSQLDATABASE) || resolveRef(process.env.DB_NAME) || 'travel_booking';
 const port = Number(resolveRef(process.env.MYSQLPORT) || resolveRef(process.env.DB_PORT) || 3306);
+
+console.log(`[DB Config] host=${host}, port=${port}, database=${database}, user=${user}`);
+
+// Check if Railway MySQL variables are set
+if (!process.env.MYSQLHOST) {
+  console.warn('⚠️ MYSQLHOST not set! Railway MySQL plugin may not be activated.');
+}
 
 // Create connection pool for better performance and auto-reconnect
 // Reduced timeouts to prevent startup hang on Railway
