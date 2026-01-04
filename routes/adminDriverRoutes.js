@@ -272,10 +272,10 @@ router.post('/drivers/:id/approve', async (req, res) => {
     const newPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     
-    // Update driver status
+    // Update driver status to 'active' (ENUM values: pending, active, inactive, offline)
     await db.query(
       `UPDATE independent_drivers 
-       SET status = 'approved', is_verified = 1, updated_at = NOW()
+       SET status = 'active', is_verified = 1, updated_at = NOW()
        WHERE id = ?`,
       [driverId]
     );
