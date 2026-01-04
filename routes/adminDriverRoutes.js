@@ -19,7 +19,7 @@ function generateRandomPassword(length = 10) {
 // Send approval email with credentials using Resend
 async function sendApprovalEmail(email, fullName, phone, password) {
   const { data, error } = await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL || 'Hantar Ride <onboarding@resend.dev>',
+    from: process.env.DRIVER_EMAIL_FROM || 'Rute Admin <onboarding@resend.dev>',
     to: [email],
     subject: '✅ Akun Driver Anda Telah Disetujui!',
     html: `
@@ -71,7 +71,7 @@ async function sendApprovalEmail(email, fullName, phone, password) {
             
             <p><strong>Anda sekarang dapat:</strong></p>
             <ul>
-              <li>✅ Login ke aplikasi Hantar Ride Driver</li>
+              <li>✅ Login ke aplikasi Rute Driver</li>
               <li>✅ Mulai menerima pesanan</li>
               <li>✅ Mendapatkan penghasilan</li>
             </ul>
@@ -80,16 +80,16 @@ async function sendApprovalEmail(email, fullName, phone, password) {
             
             <p>Jika ada pertanyaan, silahkan hubungi tim support kami.</p>
             
-            <p>Terima kasih telah bergabung dengan Hantar Ride!</p>
+            <p>Terima kasih telah bergabung dengan Rute!</p>
             
             <p style="margin-top: 30px;">
               Salam hangat,<br>
-              <strong>Tim Hantar Ride</strong>
+              <strong>Tim Rute</strong>
             </p>
           </div>
           <div class="footer">
             <p>Email ini dikirim otomatis, mohon tidak membalas email ini.</p>
-            <p>&copy; 2026 Hantar Ride. All rights reserved.</p>
+            <p>&copy; 2026 Rute. All rights reserved.</p>
           </div>
         </div>
       </body>
