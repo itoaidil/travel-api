@@ -19,7 +19,7 @@ function generateRandomPassword(length = 10) {
 // Send approval email with credentials using Resend
 async function sendApprovalEmail(email, fullName, phone, password) {
   const { data, error } = await resend.emails.send({
-    from: 'Hantar Ride <onboarding@resend.dev>', // Ganti dengan domain kamu nanti
+    from: process.env.RESEND_FROM_EMAIL || 'Hantar Ride <onboarding@resend.dev>',
     to: [email],
     subject: '✅ Akun Driver Anda Telah Disetujui!',
     html: `
