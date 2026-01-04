@@ -125,12 +125,13 @@ app.post('/api/migration/make-driver-nullable', async (req, res) => {
 // Set ENABLE_PROVINCE_FEATURES=false in Railway to disable
 if (process.env.ENABLE_PROVINCE_FEATURES !== 'false') {
   console.log('✅ Province features ENABLED');
-  app.use('/api/provinces', require('./routes/provinceRoutes'));
+  // app.use('/api/provinces', require('./routes/provinceRoutes')); // DISABLED: provinceRoutes not found
 } else {
   console.log('⚠️  Province features DISABLED (feature flag OFF)');
 }
 
-// Test database connection and run base migrations
+// Test database connection and run base migrations (DISABLED: causes startup crash)
+/*
 db.getConnection()
   .then(connection => {
     console.log('Database connected successfully');
@@ -163,8 +164,9 @@ db.getConnection()
   .catch(err => {
     console.error('Database connection failed:', err);
   });
+*/
 
-async function createAdditionalTables() {
+// Database initialization disabled on startup - enable only when DB is ready
   // Ensure customers table exists (used by customer registration/login)
   const createCustomersTable = `CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -272,6 +274,7 @@ async function createAdditionalTables() {
     console.error('Error creating additional tables:', error);
   }
 }
+*/
 
 // Detailed health check endpoint with DB status (moved to bottom, skipped if DB unavailable)
 
