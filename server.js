@@ -47,6 +47,7 @@ app.use('/api/driver-location', require('./routes/trackingRoutes'));
 app.use('/api/broadcast', require('./routes/broadcastRoutes')); // Driver broadcast accept/reject
 app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status & FCM
 app.use('/api/driver-auth', require('./routes/driverRegistrationRoutes')); // Driver registration & login
+app.use('/api/driver', require('./routes/driverChatRoutes')); // Driver chat/inbox
 
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
