@@ -1,28 +1,74 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const { uploadDriverPhoto } = require('../config/cloudinary');
 
 /**
- * POST /api/driver/register
- * Register new driver account
+ * POST /api/driver-auth/upload-photo
+ * Upload single driver photo to Cloudinary
+ * Form-data: photo (file)
+ */
+router.post('/upload-photo', uploadDriverPhoto.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No photo file provided'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photo uploaded successfully',
+      data: {
+        url: req.file.path,
+        filename: req.file.filename
+      }
+    });
+
+  } catch (error) {
+    console.error('Error uploading photo:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload photo',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/driver-auth/register
+ * Register new driver account with complete data
  * Body: {
- *   phone: string (unique),
- *   fullName: string,
- *   password: string,
- *   vehicle_type: string (motorcycle|car|truck),
- *   license_plate: string,
- *   vehicle_year: number
+ *   phone, fullName, nik, birthPlace, birthDate, address, rt, rw, 
+ *   kelurahan, kecamatan, agama, maritalStatus, email,
+ *   vehicleType, vehicleColor, vehicleYear,
+ *   bankName, accountNumber, accountName,
+ *   ktpPhotoUrl, selfiePhotoUrl, password
  * }
  */
 router.post('/register', async (req, res) => {
   try {
-    const { phone, fullName, password, vehicle_type, license_plate, vehicle_year } = req.body;
+    const {
+      phone, fullName, nik, birthPlace, birthDate, address, 
+      rt, rw, kelurahan, kecamatan, agama, maritalStatus, email,
+      vehicleType, vehicleColor, vehicleYear,
+      bankName, accountNumber, accountName,
+      ktpPhotoUrl, selfiePhotoUrl, password
+    } = req.body;
 
     // Validate required fields
     if (!phone || !fullName || !password) {
       return res.status(400).json({
         success: false,
         message: 'Phone, full name, and password are required'
+      });
+    }
+
+    if (!nik || !ktpPhotoUrl || !selfiePhotoUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'NIK, KTP photo, and selfie photo are required'
       });
     }
 
@@ -37,14 +83,14 @@ router.post('/register', async (req, res) => {
 
     // Check if driver with this phone already exists
     const [existing] = await db.query(
-      'SELECT id FROM independent_drivers WHERE phone = ?',
-      [phone]
+      'SELECT id FROM independent_drivers WHERE phone = ? OR nik = ?',
+      [phone, nik]
     );
 
     if (existing.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'Phone number already registered'
+        message: 'Phone number or NIK already registered'
       });
     }
 
@@ -54,16 +100,19 @@ router.post('/register', async (req, res) => {
     // Create driver account
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
-        phone, full_name, password, vehicle_type, license_plate, vehicle_year, 
+        phone, full_name, nik, birth_place, birth_date, address, rt, rw,
+        kelurahan, kecamatan, agama, marital_status, email,
+        vehicle_type, vehicle_color, vehicle_year,
+        bank_name, account_number, account_name,
+        ktp_photo_url, selfie_photo_url, password,
         is_active, status, is_online, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
-        phone,
-        fullName,
-        hashedPassword,
-        vehicle_type || 'motorcycle',
-        license_plate || null,
-        vehicle_year || null,
+        phone, fullName, nik, birthPlace, birthDate, address, rt, rw,
+        kelurahan, kecamatan, agama, maritalStatus, email,
+        vehicleType || 'motorcycle', vehicleColor, vehicleYear,
+        bankName, accountNumber, accountName,
+        ktpPhotoUrl, selfiePhotoUrl, hashedPassword,
         0, // not active until admin approval
         'pending_approval',
         0  // offline
