@@ -64,7 +64,9 @@ app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status
 // app.use('/api/migration/payment', require('./routes/paymentMigration'));
 // app.use('/api/chat', require('./routes/chatRoutes'));
 
-// TEMPORARY: Manual migration 005 endpoint (REMOVE AFTER USE!)
+// TEMPORARY: Manual migration 005 endpoint (DISABLED - causing startup crashes)
+// Uncomment only when needed for manual migrations
+/*
 app.post('/api/migration/run-005', async (req, res) => {
   const statements = [
     "ALTER TABLE independent_bookings ADD COLUMN vehicle_type VARCHAR(50) NULL",
@@ -271,44 +273,7 @@ async function createAdditionalTables() {
   }
 }
 
-// Health check endpoint for Railway
-app.get('/health', async (req, res) => {
-  const features = {
-    provinceFiltering: process.env.ENABLE_PROVINCE_FEATURES !== 'false',
-  };
-  
-  // Check database connection with timeout
-  let dbStatus = 'disconnected';
-  try {
-    const connection = await Promise.race([
-      db.getConnection(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('DB connection timeout')), 5000)
-      )
-    ]);
-    dbStatus = 'connected';
-    connection.release();
-  } catch (err) {
-    console.error('Health check DB error:', err.message);
-    dbStatus = 'error: ' + err.message;
-    // Return 503 if DB is not available
-    return res.status(503).json({ 
-      status: 'UNHEALTHY', 
-      message: 'Database connection failed',
-      database: dbStatus,
-      features: features,
-      timestamp: new Date().toISOString(),
-    });
-  }
-  
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Travel API Server is running',
-    database: dbStatus,
-    features: features,
-    timestamp: new Date().toISOString(),
-  });
-});
+// Detailed health check endpoint with DB status (moved to bottom, skipped if DB unavailable)
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Travel API Server running on http://0.0.0.0:${PORT}`);
