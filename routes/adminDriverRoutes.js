@@ -1,16 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// Email transporter setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.DRIVER_EMAIL_USER,
-    pass: process.env.DRIVER_EMAIL_PASS
-  }
-});
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Generate random password
 function generateRandomPassword(length = 10) {
@@ -22,11 +16,11 @@ function generateRandomPassword(length = 10) {
   return password;
 }
 
-// Send approval email with credentials
+// Send approval email with credentials using Resend
 async function sendApprovalEmail(email, fullName, phone, password) {
-  const mailOptions = {
-    from: process.env.DRIVER_EMAIL_FROM || 'Hantar Ride <noreply@hantarride.com>',
-    to: email,
+  const { data, error } = await resend.emails.send({
+    from: 'Hantar Ride <onboarding@resend.dev>', // Ganti dengan domain kamu nanti
+    to: [email],
     subject: '✅ Akun Driver Anda Telah Disetujui!',
     html: `
       <!DOCTYPE html>
@@ -101,9 +95,13 @@ async function sendApprovalEmail(email, fullName, phone, password) {
       </body>
       </html>
     `
-  };
+  });
 
-  await transporter.sendMail(mailOptions);
+  if (error) {
+    throw new Error(`Resend error: ${error.message}`);
+  }
+
+  return data;
 }
 
 // Get driver statistics
