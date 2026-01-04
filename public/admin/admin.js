@@ -67,7 +67,7 @@ function renderStats(stats) {
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-1">Total Drivers</h6>
-                            <h2 class="mb-0">${stats.total_drivers}</h2>
+                            <h2 class="mb-0">${stats.total || 0}</h2>
                         </div>
                         <div class="stats-icon bg-primary bg-opacity-10 text-primary">
                             <i class="fas fa-users"></i>
@@ -82,7 +82,7 @@ function renderStats(stats) {
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-1">Pending</h6>
-                            <h2 class="mb-0 text-warning">${stats.pending_count}</h2>
+                            <h2 class="mb-0 text-warning">${stats.pending || 0}</h2>
                         </div>
                         <div class="stats-icon bg-warning bg-opacity-10 text-warning">
                             <i class="fas fa-clock"></i>
@@ -97,7 +97,7 @@ function renderStats(stats) {
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-1">Approved</h6>
-                            <h2 class="mb-0 text-success">${stats.approved_count}</h2>
+                            <h2 class="mb-0 text-success">${stats.approved || 0}</h2>
                         </div>
                         <div class="stats-icon bg-success bg-opacity-10 text-success">
                             <i class="fas fa-check-circle"></i>
@@ -112,7 +112,7 @@ function renderStats(stats) {
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-1">Rejected</h6>
-                            <h2 class="mb-0 text-danger">${stats.rejected_count}</h2>
+                            <h2 class="mb-0 text-danger">${stats.rejected || 0}</h2>
                         </div>
                         <div class="stats-icon bg-danger bg-opacity-10 text-danger">
                             <i class="fas fa-times-circle"></i>
