@@ -176,7 +176,7 @@ db.getConnection()
   });
 */
 
-// Database initialization disabled on startup - enable only when DB is ready
+/* Database initialization disabled - commented out to avoid startup blocking
   // Ensure customers table exists (used by customer registration/login)
   const createCustomersTable = `CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -283,6 +283,7 @@ db.getConnection()
   } catch (error) {
     console.error('Error creating additional tables:', error);
   }
+*/
 }
 */
 
