@@ -40,14 +40,14 @@ if (shouldLog) {
   console.log('MySQL config (safe):', { host, port, database, user });
 }
 
-// Test connection
-pool.getConnection()
-  .then(connection => {
-    console.log('Connected to MySQL database');
-    connection.release();
-  })
-  .catch(err => {
-    console.error('Error connecting to database:', err);
-  });
+// Test connection (DISABLED: causes startup hang if DB unavailable)
+// pool.getConnection()
+//   .then(connection => {
+//     console.log('Connected to MySQL database');
+//     connection.release();
+//   })
+//   .catch(err => {
+//     console.error('Error connecting to database:', err);
+//   });
 
 module.exports = pool;
