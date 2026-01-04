@@ -226,7 +226,8 @@ router.post('/login', async (req, res) => {
     // Find user by phone with user_type driver
     const [users] = await db.query(
       `SELECT u.id, u.phone, u.username, u.password, u.is_active, u.user_type,
-              d.id as driver_id, d.rating, d.total_trips, d.status, d.is_verified
+              d.id as driver_id, d.email, d.full_name, d.vehicle_type, d.vehicle_plate,
+              d.rating, d.total_trips, d.status, d.is_verified
        FROM users u
        LEFT JOIN independent_drivers d ON u.id = d.user_id
        WHERE u.phone = ? AND u.user_type = 'driver'`,
@@ -268,11 +269,14 @@ router.post('/login', async (req, res) => {
         userId: user.id,
         driverId: user.driver_id,
         phone: user.phone,
-        fullName: user.username,
-        rating: user.rating || 0,
+        fullName: user.full_name || user.username,
+        email: user.email || '',
+        vehicleType: user.vehicle_type || 'bike',
+        vehiclePlate: user.vehicle_plate || '',
+        rating: user.rating || '5.0',
         totalTrips: user.total_trips || 0,
-        isVerified: user.is_verified || false,
-        status: user.status
+        isVerified: user.is_verified || 0,
+        status: user.status || 'pending'
       }
     });
 
