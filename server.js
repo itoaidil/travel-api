@@ -24,6 +24,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Simple health check (no DB needed)
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Travel API is running', timestamp: new Date().toISOString() });
+});
+
 // Routes - Driver App Only (minimal setup)
 // Comment out missing routes to avoid crashes
 // TODO: Restore other routes when files are available
