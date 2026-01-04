@@ -110,16 +110,16 @@ router.post('/register', async (req, res) => {
     // Create driver account
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
-        phone, full_name, nik, place_of_birth, date_of_birth, address, rt_rw,
-        kelurahan, kecamatan, religion, marital_status, email,
+        phone, full_name, nik, place_of_birth, date_of_birth, address_full, rt_rw,
+        kelurahan, kecamatan, marital_status, email,
         vehicle_type, vehicle_color, vehicle_year,
         bank_name, bank_account_number, bank_account_holder,
         ktp_photo_url, selfie_photo_url, license_photo_url, stnk_photo_url, password,
         is_verified, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         phone, fullName, nik, birthPlace, birthDate, address, `${rt}/${rw}`,
-        kelurahan, kecamatan, agama, maritalStatus, email,
+        kelurahan, kecamatan, maritalStatus, email,
         vehicleType || 'bicycle', vehicleColor, vehicleYear,
         bankName, accountNumber, accountName,
         ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl || null, stnkPhotoUrl || null, hashedPassword,
