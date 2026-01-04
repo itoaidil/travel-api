@@ -46,6 +46,7 @@ app.get('/health', (req, res) => {
 app.use('/api/driver-location', require('./routes/trackingRoutes'));
 app.use('/api/broadcast', require('./routes/broadcastRoutes')); // Driver broadcast accept/reject
 app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status & FCM
+app.use('/api/driver-auth', require('./routes/driverRegistrationRoutes')); // Driver registration & login
 
 // Commented out routes (files not in repo):
 // app.use('/api/student', require('./routes/studentRoutes'));
