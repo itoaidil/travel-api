@@ -110,22 +110,21 @@ router.post('/register', async (req, res) => {
     // Create driver account
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
-        phone, full_name, nik, birth_place, birth_date, address, rt, rw,
-        kelurahan, kecamatan, agama, marital_status, email,
+        phone, full_name, nik, place_of_birth, date_of_birth, address, rt_rw,
+        kelurahan, kecamatan, religion, marital_status, email,
         vehicle_type, vehicle_color, vehicle_year,
-        bank_name, account_number, account_name,
+        bank_name, bank_account_number, bank_account_holder,
         ktp_photo_url, selfie_photo_url, license_photo_url, stnk_photo_url, password,
-        is_active, status, is_online, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        is_verified, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
-        phone, fullName, nik, birthPlace, birthDate, address, rt, rw,
+        phone, fullName, nik, birthPlace, birthDate, address, `${rt}/${rw}`,
         kelurahan, kecamatan, agama, maritalStatus, email,
         vehicleType || 'bicycle', vehicleColor, vehicleYear,
         bankName, accountNumber, accountName,
         ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl || null, stnkPhotoUrl || null, hashedPassword,
-        0, // not active until admin approval
-        'pending_approval',
-        0  // offline
+        false, // not verified until admin approval
+        'pending'
       ]
     );
 
@@ -167,7 +166,7 @@ router.post('/login', async (req, res) => {
 
     // Find driver by phone
     const [drivers] = await db.query(
-      `SELECT id, phone, full_name, password, is_active, status, rating, total_trips 
+      `SELECT id, phone, full_name, password, is_verified, status, rating, total_trips 
        FROM independent_drivers WHERE phone = ?`,
       [phone]
     );
@@ -181,8 +180,8 @@ router.post('/login', async (req, res) => {
 
     const driver = drivers[0];
 
-    // Check if account is active (approved by admin)
-    if (!driver.is_active) {
+    // Check if account is verified (approved by admin)
+    if (!driver.is_verified) {
       return res.status(403).json({
         success: false,
         message: 'Your account is not yet approved. Please wait for admin verification.',
