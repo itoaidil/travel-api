@@ -75,7 +75,7 @@ router.post('/register', async (req, res) => {
     }
     
     // Validate vehicle requirements - hanya untuk kendaraan bermotor
-    const isMotorVehicle = vehicleType !== 'bicycle' && vehicleType !== 'skateboard' && vehicleType !== 'scooter';
+    const isMotorVehicle = vehicleType !== 'bike' && vehicleType !== 'skateboard' && vehicleType !== 'wheels';
     
     if (isMotorVehicle) {
       if (!vehiclePlate || !licenseNumber) {
@@ -173,7 +173,7 @@ router.post('/register', async (req, res) => {
         userId, fullName, phone, email, nik,
         birthPlace, birthDate, religion, maritalStatus,
         address, `${rt}/${rw}`, kelurahan, kecamatan,
-        vehicleType || 'bicycle', 
+        vehicleType || 'bike', 
         vehiclePlate || null,  // NULL untuk sepeda
         vehicleColor, vehicleYear,
         licenseNumber || null,  // NULL untuk sepeda
