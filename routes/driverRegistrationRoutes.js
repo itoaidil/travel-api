@@ -74,16 +74,18 @@ router.post('/register', async (req, res) => {
       });
     }
     
-    // Validate vehicle requirements
-    if (!vehiclePlate || !licenseNumber) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vehicle plate and license number are required'
-      });
-    }
+    // Validate vehicle requirements - hanya untuk kendaraan bermotor
+    const isMotorVehicle = vehicleType !== 'bicycle' && vehicleType !== 'skateboard' && vehicleType !== 'scooter';
     
-    // Validate SIM & STNK untuk kendaraan bermotor
-    if (vehicleType !== 'bicycle' && vehicleType !== 'skateboard' && vehicleType !== 'scooter') {
+    if (isMotorVehicle) {
+      if (!vehiclePlate || !licenseNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vehicle plate and license number are required for motor vehicles'
+        });
+      }
+      
+      // Validate SIM & STNK untuk kendaraan bermotor
       if (!simPhotoUrl || !stnkPhotoUrl || !stnkNumber) {
         return res.status(400).json({
           success: false,
@@ -114,17 +116,32 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Check if NIK or license already used
+    // Check if NIK already used
     const [existingDrivers] = await db.query(
-      'SELECT id FROM independent_drivers WHERE nik = ? OR license_number = ? OR vehicle_plate = ?',
-      [nik, licenseNumber, vehiclePlate]
+      'SELECT id FROM independent_drivers WHERE nik = ?',
+      [nik]
     );
 
     if (existingDrivers.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'NIK, license number, or vehicle plate already registered'
+        message: 'NIK already registered'
       });
+    }
+    
+    // Check license/vehicle plate only for motor vehicles
+    if (isMotorVehicle && (licenseNumber || vehiclePlate)) {
+      const [existingVehicles] = await db.query(
+        'SELECT id FROM independent_drivers WHERE license_number = ? OR vehicle_plate = ?',
+        [licenseNumber, vehiclePlate]
+      );
+
+      if (existingVehicles.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'License number or vehicle plate already registered'
+        });
+      }
     }
 
     // Hash password
@@ -156,8 +173,13 @@ router.post('/register', async (req, res) => {
         userId, fullName, phone, email, nik,
         birthPlace, birthDate, religion, maritalStatus,
         address, `${rt}/${rw}`, kelurahan, kecamatan,
-        vehicleType || 'bicycle', vehiclePlate, vehicleColor, vehicleYear,
-        licenseNumber, simPhotoUrl || null, stnkNumber || null, stnkPhotoUrl || null,
+        vehicleType || 'bicycle', 
+        vehiclePlate || null,  // NULL untuk sepeda
+        vehicleColor, vehicleYear,
+        licenseNumber || null,  // NULL untuk sepeda
+        simPhotoUrl || null, 
+        stnkNumber || null,  // NULL untuk sepeda
+        stnkPhotoUrl || null,
         bankName, accountNumber, accountName,
         ktpPhotoUrl, selfiePhotoUrl,
         false // not verified until admin approval
