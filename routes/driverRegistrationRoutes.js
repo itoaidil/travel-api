@@ -150,7 +150,7 @@ router.post('/register', async (req, res) => {
     // 1. Create user account first
     const [userResult] = await db.query(
       `INSERT INTO users (
-        full_name, email, phone, password, role, is_active, created_at, updated_at
+        username, email, phone, password, user_type, is_active, created_at, updated_at
       ) VALUES (?, ?, ?, ?, 'driver', 0, NOW(), NOW())`,
       [fullName, email, phone, hashedPassword]
     );
@@ -223,13 +223,13 @@ router.post('/login', async (req, res) => {
 
     const db = req.db;
 
-    // Find user by phone with role driver
+    // Find user by phone with user_type driver
     const [users] = await db.query(
-      `SELECT u.id, u.phone, u.full_name, u.password, u.is_active, u.role,
+      `SELECT u.id, u.phone, u.username, u.password, u.is_active, u.user_type,
               d.id as driver_id, d.rating, d.total_trips, d.status, d.is_verified
        FROM users u
        LEFT JOIN independent_drivers d ON u.id = d.user_id
-       WHERE u.phone = ? AND u.role = 'driver'`,
+       WHERE u.phone = ? AND u.user_type = 'driver'`,
       [phone]
     );
 
@@ -268,7 +268,7 @@ router.post('/login', async (req, res) => {
         userId: user.id,
         driverId: user.driver_id,
         phone: user.phone,
-        fullName: user.full_name,
+        fullName: user.username,
         rating: user.rating || 0,
         totalTrips: user.total_trips || 0,
         isVerified: user.is_verified || false,
