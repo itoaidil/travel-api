@@ -284,8 +284,6 @@ db.getConnection()
     console.error('Error creating additional tables:', error);
   }
 */
-}
-*/
 
 // Detailed health check endpoint with DB status (moved to bottom, skipped if DB unavailable)
 
