@@ -48,6 +48,9 @@ app.use('/api/broadcast', require('./routes/broadcastRoutes')); // Driver broadc
 app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status & FCM
 app.use('/api/driver-auth', require('./routes/driverRegistrationRoutes')); // Driver registration & login
 
+// Admin endpoints (for driver verification)
+app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
+
 // Commented out routes (files not in repo):
 // app.use('/api/student', require('./routes/studentRoutes'));
 // app.use('/api/driver', require('./routes/driverRoutes'));
