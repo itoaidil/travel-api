@@ -3,7 +3,16 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const db = require('./config/database');
+
+// Database with timeout protection (OPTIONAL - for routes that need it)
+let db = null;
+try {
+  const DatabaseModule = require('./config/database');
+  db = DatabaseModule;
+} catch (err) {
+  console.error('⚠️ Database initialization error (routes may be unavailable):', err.message);
+  // db will be null, but server will still start
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
