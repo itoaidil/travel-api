@@ -206,8 +206,8 @@ function renderDrivers(drivers) {
                                     <span class="badge bg-light text-dark me-2">
                                         <i class="fas fa-car me-1"></i>${translateVehicleType(driver.vehicle_type)}
                                     </span>
-                                    <span class="badge ${getStatusBadgeClass(driver.verification_status)}">
-                                        ${driver.verification_status.toUpperCase()}
+                                    <span class="badge ${getStatusBadgeClass(driver.status)}">
+                                        ${driver.status ? driver.status.toUpperCase() : 'PENDING'}
                                     </span>
                                 </div>
                                 <div class="text-muted small">
@@ -239,7 +239,7 @@ function renderDrivers(drivers) {
 
 // Render action buttons based on status
 function renderActionButtons(driver) {
-    if (driver.verification_status === 'pending') {
+    if (driver.status === 'pending') {
         return `
             <button class="btn btn-info btn-sm mb-2 w-100" onclick="showDriverDetail(${driver.id})">
                 <i class="fas fa-eye me-1"></i>View Detail
@@ -251,13 +251,13 @@ function renderActionButtons(driver) {
                 <i class="fas fa-times-circle me-1"></i>Reject
             </button>
         `;
-    } else if (driver.verification_status === 'approved') {
+    } else if (driver.status === 'approved') {
         return `
             <span class="badge bg-success p-2">
                 <i class="fas fa-check-circle me-1"></i>Approved
             </span>
         `;
-    } else if (driver.verification_status === 'rejected') {
+    } else if (driver.status === 'rejected') {
         return `
             <span class="badge bg-danger p-2">
                 <i class="fas fa-times-circle me-1"></i>Rejected
