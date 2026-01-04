@@ -1,5 +1,110 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
+
+// Email transporter setup
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.DRIVER_EMAIL_USER,
+    pass: process.env.DRIVER_EMAIL_PASS
+  }
+});
+
+// Generate random password
+function generateRandomPassword(length = 10) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+// Send approval email with credentials
+async function sendApprovalEmail(email, fullName, phone, password) {
+  const mailOptions = {
+    from: process.env.DRIVER_EMAIL_FROM || 'Hantar Ride <noreply@hantarride.com>',
+    to: email,
+    subject: '✅ Akun Driver Anda Telah Disetujui!',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+          .credentials { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981; }
+          .credential-item { margin: 10px 0; }
+          .credential-label { font-weight: bold; color: #6b7280; }
+          .credential-value { font-size: 18px; color: #1f2937; font-weight: bold; }
+          .button { display: inline-block; padding: 12px 30px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+          .footer { text-align: center; color: #6b7280; font-size: 12px; margin-top: 30px; }
+          .warning { background: #fef3c7; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 Selamat!</h1>
+            <p>Akun Driver Anda Telah Disetujui</p>
+          </div>
+          <div class="content">
+            <p>Halo <strong>${fullName}</strong>,</p>
+            
+            <p>Selamat! Akun driver Anda telah diverifikasi dan disetujui oleh tim kami.</p>
+            
+            <div class="credentials">
+              <h3 style="margin-top: 0; color: #1f2937;">📱 Informasi Login Anda</h3>
+              
+              <div class="credential-item">
+                <div class="credential-label">Username (Nomor HP):</div>
+                <div class="credential-value">${phone}</div>
+              </div>
+              
+              <div class="credential-item">
+                <div class="credential-label">Password:</div>
+                <div class="credential-value">${password}</div>
+              </div>
+            </div>
+            
+            <div class="warning">
+              <strong>⚠️ Penting:</strong> Simpan password ini dengan aman. Anda bisa mengubah password setelah login pertama kali.
+            </div>
+            
+            <p><strong>Anda sekarang dapat:</strong></p>
+            <ul>
+              <li>✅ Login ke aplikasi Hantar Ride Driver</li>
+              <li>✅ Mulai menerima pesanan</li>
+              <li>✅ Mendapatkan penghasilan</li>
+            </ul>
+            
+            <p>Silahkan download aplikasi driver dan login dengan kredensial di atas.</p>
+            
+            <p>Jika ada pertanyaan, silahkan hubungi tim support kami.</p>
+            
+            <p>Terima kasih telah bergabung dengan Hantar Ride!</p>
+            
+            <p style="margin-top: 30px;">
+              Salam hangat,<br>
+              <strong>Tim Hantar Ride</strong>
+            </p>
+          </div>
+          <div class="footer">
+            <p>Email ini dikirim otomatis, mohon tidak membalas email ini.</p>
+            <p>&copy; 2026 Hantar Ride. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+}
 
 // Get driver statistics
 router.get('/drivers-stats', async (req, res) => {
@@ -150,9 +255,9 @@ router.post('/drivers/:id/approve', async (req, res) => {
     const db = req.db;
     const driverId = req.params.id;
     
-    // Get driver info
+    // Get driver info including phone
     const [drivers] = await db.query(
-      'SELECT user_id, full_name, email FROM independent_drivers WHERE id = ?',
+      'SELECT user_id, full_name, email, phone FROM independent_drivers WHERE id = ?',
       [driverId]
     );
     
@@ -165,6 +270,10 @@ router.post('/drivers/:id/approve', async (req, res) => {
     
     const driver = drivers[0];
     
+    // Generate random password
+    const newPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
     // Update driver status
     await db.query(
       `UPDATE independent_drivers 
@@ -173,20 +282,26 @@ router.post('/drivers/:id/approve', async (req, res) => {
       [driverId]
     );
     
-    // Update user account to active
+    // Update user account: activate and set new password
     await db.query(
       `UPDATE users 
-       SET is_active = 1, updated_at = NOW()
+       SET is_active = 1, password = ?, updated_at = NOW()
        WHERE id = ?`,
-      [driver.user_id]
+      [hashedPassword, driver.user_id]
     );
     
-    // TODO: Send email notification to driver
-    // Example: await sendEmail(driver.email, 'approved', driver.full_name);
+    // Send email notification with credentials
+    try {
+      await sendApprovalEmail(driver.email, driver.full_name, driver.phone, newPassword);
+      console.log(`✅ Approval email sent to ${driver.email}`);
+    } catch (emailError) {
+      console.error('⚠️ Failed to send email:', emailError.message);
+      // Don't fail the approval if email fails
+    }
     
     res.json({
       success: true,
-      message: `Driver ${driver.full_name} has been approved successfully`
+      message: `Driver ${driver.full_name} has been approved successfully. Credentials sent to ${driver.email}`
     });
   } catch (error) {
     console.error('Error approving driver:', error);
