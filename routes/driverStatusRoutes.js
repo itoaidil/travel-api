@@ -167,4 +167,79 @@ router.get('/profile', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/driver/change-password
+ * Change driver password
+ */
+router.post('/change-password', async (req, res) => {
+  const { driver_id, phone, old_password, new_password } = req.body;
+
+  if (!driver_id || !phone || !old_password || !new_password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields'
+    });
+  }
+
+  if (new_password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 6 characters'
+    });
+  }
+
+  try {
+    const bcrypt = require('bcryptjs');
+
+    // Get user by phone
+    const [users] = await db.query(
+      `SELECT u.id, u.password 
+       FROM users u
+       INNER JOIN independent_drivers d ON u.id = d.user_id
+       WHERE u.phone = ? AND d.id = ?`,
+      [phone, driver_id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    const user = users[0];
+
+    // Verify old password
+    const validPassword = await bcrypt.compare(old_password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Password lama tidak valid'
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    // Update password
+    await db.query(
+      'UPDATE users SET password = ? WHERE id = ?',
+      [hashedPassword, user.id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Password berhasil diubah'
+    });
+
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error changing password',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
