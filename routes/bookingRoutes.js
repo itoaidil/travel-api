@@ -153,7 +153,7 @@ router.post('/delivery/create', async (req, res) => {
         ?, ?, ?, ?, 
         ?, ?, ?, ?, ?, 
         ?, ?, ?, ?, 
-        ?, ?, ?,
+        ?, ?, ?, ?,
         NOW(), NOW(), NOW()
       )
     `;
