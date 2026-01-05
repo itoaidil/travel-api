@@ -85,6 +85,16 @@ router.post('/delivery/create', async (req, res) => {
     const customerPhone = customer.phone || '';
     const customerEmail = customer.email || '';
 
+    // Normalize payment method to valid ENUM values
+    // Valid values: 'cash', 'gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'credit_card', 'bank_transfer'
+    let normalizedPaymentMethod = 'cash'; // default
+    if (payment_method) {
+      const validMethods = ['cash', 'gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'credit_card', 'bank_transfer'];
+      if (validMethods.includes(payment_method.toLowerCase())) {
+        normalizedPaymentMethod = payment_method.toLowerCase();
+      }
+    }
+
     // Payment status based on demo mode or payment method
     let paymentStatus = 'pending';
     let bookingStatus = 'pending';
@@ -92,7 +102,7 @@ router.post('/delivery/create', async (req, res) => {
     if (demo_payment_success) {
       paymentStatus = 'completed';
       bookingStatus = 'pending'; // Still pending, waiting for driver
-    } else if (payment_method === 'cash') {
+    } else if (normalizedPaymentMethod === 'cash') {
       paymentStatus = 'pending'; // Will be paid on delivery
       bookingStatus = 'pending';
     }
@@ -157,42 +167,7 @@ router.post('/delivery/create', async (req, res) => {
       recipient_phone,
       recipient_address_detail,
       recipient_note_to_driver,
-      payment_method,
-      paymentStatus,
-      bookingStatus
-    ]);
-
-    const bookingId = result.insertId;
-
-    console.log('✅ Delivery booking created:', {
-      booking_id: bookingId,
-      booking_code: bookingCode,
-      payment_status: paymentStatus
-    });
-
-    // Return success response
-    return res.status(201).json({
-      success: true,
-      message: 'Delivery booking created successfully',
-      booking_id: bookingId,
-      booking_code: bookingCode,
-      payment_status: paymentStatus,
-      booking_status: bookingStatus,
-      data: {
-        id: bookingId,
-        booking_code: bookingCode,
-        customer_id,
-        vehicle_type,
-        pickup_address,
-        dropoff_address,
-        distance_km,
-        total_fare,
-        payment_method,
-        payment_status: paymentStatus,
-        status: bookingStatus
-      }
-    });
-
+      normalizedPaymentMethod, // Use normalized payment method
   } catch (error) {
     console.error('❌ Error creating delivery booking:', error);
     return res.status(500).json({
