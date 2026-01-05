@@ -88,12 +88,11 @@ router.post('/register-fcm', async (req, res) => {
     await db.query(
       `UPDATE independent_drivers 
        SET fcm_token = ?, 
-           device_type = ?,
            last_fcm_update = NOW(),
            status = 'active',
            last_online_at = NOW()
        WHERE id = ?`,
-      [fcm_token, device_type || 'android', driver_id]
+      [fcm_token, driver_id]
     );
     
     console.log(`✅ FCM token registered for driver ${driver_id}, status set to active`);
