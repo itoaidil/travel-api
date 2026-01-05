@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../config/db');
+const { sendNotificationToMultipleDrivers } = require('../services/notificationService');
 
 /**
  * POST /api/bookings/delivery/create
@@ -211,6 +213,71 @@ router.post('/delivery/create', async (req, res) => {
       payment_status: paymentStatus
     });
 
+    // Find nearby available drivers and send notifications
+    try {
+      console.log('📲 Finding nearby drivers...');
+      
+      // Get drivers within 10km radius who are online and available
+      // Formula: 1 degree ≈ 111km, so 10km ≈ 0.09 degrees
+      const radiusDegrees = 10 / 111; // ~10km radius
+      
+      const [nearbyDrivers] = await db.query(`
+        SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
+               d.current_lat, d.current_lng,
+               (6371 * acos(
+                 cos(radians(?)) * cos(radians(d.current_lat)) *
+                 cos(radians(d.current_lng) - radians(?)) +
+                 sin(radians(?)) * sin(radians(d.current_lat))
+               )) AS distance_km
+        FROM drivers d
+        WHERE d.is_online = 1
+          AND d.is_available = 1
+          AND d.vehicle_type = ?
+          AND d.fcm_token IS NOT NULL
+          AND d.current_lat IS NOT NULL
+          AND d.current_lng IS NOT NULL
+          AND d.current_lat BETWEEN ? - ? AND ? + ?
+          AND d.current_lng BETWEEN ? - ? AND ? + ?
+        HAVING distance_km <= 10
+        ORDER BY distance_km ASC
+        LIMIT 10
+      `, [
+        pickup_lat, pickup_lng, pickup_lat, // For distance calculation
+        vehicle_type, // Match vehicle type
+        pickup_lat, radiusDegrees, pickup_lat, radiusDegrees, // Lat bounds
+        pickup_lng, radiusDegrees, pickup_lng, radiusDegrees  // Lng bounds
+      ]);
+
+      if (nearbyDrivers.length > 0) {
+        console.log(`📍 Found ${nearbyDrivers.length} nearby drivers`);
+        
+        const fcmTokens = nearbyDrivers.map(d => d.fcm_token).filter(Boolean);
+        
+        if (fcmTokens.length > 0) {
+          const notificationResult = await sendNotificationToMultipleDrivers(fcmTokens, {
+            booking_id: bookingId,
+            booking_code: bookingCode,
+            vehicle_type,
+            pickup_address,
+            dropoff_address,
+            pickup_lat,
+            pickup_lng,
+            distance_km,
+            total_fare,
+            item_type,
+            item_size
+          });
+          
+          console.log('✅ Notifications sent:', notificationResult);
+        }
+      } else {
+        console.log('⚠️ No nearby drivers found');
+      }
+    } catch (notifError) {
+      // Don't fail the booking if notification fails
+      console.error('⚠️ Failed to send notifications:', notifError.message);
+    }
+
     // Return success response
     return res.status(201).json({
       success: true,
@@ -409,6 +476,109 @@ router.patch('/:booking_id/status', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to update status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/bookings/:booking_id/accept
+ * Driver accepts a booking
+ */
+router.post('/:booking_id/accept', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
+  try {
+    const bookingId = req.params.booking_id;
+    const { driver_id } = req.body;
+
+    if (!driver_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_id is required'
+      });
+    }
+
+    // Get driver info
+    const [drivers] = await db.query(
+      'SELECT id, full_name, phone, vehicle_type FROM drivers WHERE id = ?',
+      [driver_id]
+    );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    const driver = drivers[0];
+
+    // Check if booking is still available
+    const [bookings] = await db.query(
+      'SELECT booking_status, driver_id FROM independent_bookings WHERE id = ?',
+      [bookingId]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const booking = bookings[0];
+
+    if (booking.driver_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking already accepted by another driver'
+      });
+    }
+
+    // Assign driver to booking
+    await db.query(
+      `UPDATE independent_bookings 
+       SET driver_id = ?, 
+           driver_name = ?,
+           driver_phone = ?,
+           booking_status = 'accepted',
+           updated_at = NOW()
+       WHERE id = ?`,
+      [driver_id, driver.full_name, driver.phone, bookingId]
+    );
+
+    // Update driver availability
+    await db.query(
+      'UPDATE drivers SET is_available = 0, updated_at = NOW() WHERE id = ?',
+      [driver_id]
+    );
+
+    console.log(`✅ Booking ${bookingId} accepted by driver ${driver_id}`);
+
+    return res.json({
+      success: true,
+      message: 'Booking accepted successfully',
+      data: {
+        booking_id: bookingId,
+        driver_id: driver_id,
+        driver_name: driver.full_name,
+        status: 'accepted'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error accepting booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to accept booking',
       error: error.message
     });
   }
