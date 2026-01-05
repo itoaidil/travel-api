@@ -117,6 +117,9 @@ router.post('/delivery/create', async (req, res) => {
         customer_name,
         customer_phone,
         customer_email,
+        driver_id,
+        driver_name,
+        driver_phone,
         vehicle_type,
         pickup_location,
         pickup_address,
@@ -140,7 +143,7 @@ router.post('/delivery/create', async (req, res) => {
         booking_status,
         created_at,
         updated_at
-      ) VALUES (?, 'package', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, 'package', ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
 
     const [result] = await db.query(insertQuery, [
