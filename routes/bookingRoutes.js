@@ -168,6 +168,40 @@ router.post('/delivery/create', async (req, res) => {
       recipient_address_detail,
       recipient_note_to_driver,
       normalizedPaymentMethod, // Use normalized payment method
+      paymentStatus,
+      bookingStatus
+    ]);
+
+    const bookingId = result.insertId;
+
+    console.log('✅ Delivery booking created:', {
+      booking_id: bookingId,
+      booking_code: bookingCode,
+      payment_status: paymentStatus
+    });
+
+    // Return success response
+    return res.status(201).json({
+      success: true,
+      message: 'Delivery booking created successfully',
+      booking_id: bookingId,
+      booking_code: bookingCode,
+      payment_status: paymentStatus,
+      booking_status: bookingStatus,
+      data: {
+        id: bookingId,
+        booking_code: bookingCode,
+        customer_id,
+        vehicle_type,
+        pickup_address,
+        dropoff_address,
+        distance_km,
+        total_fare,
+        payment_status: paymentStatus,
+        status: bookingStatus
+      }
+    });
+
   } catch (error) {
     console.error('❌ Error creating delivery booking:', error);
     return res.status(500).json({
