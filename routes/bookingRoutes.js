@@ -583,4 +583,95 @@ router.post('/:booking_id/accept', async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/bookings/:booking_id/cancel
+ * Cancel a booking (customer or driver)
+ */
+router.put('/:booking_id/cancel', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
+  try {
+    const bookingId = req.params.booking_id;
+    const { reason, cancelled_by } = req.body;
+
+    if (!bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'booking_id is required'
+      });
+    }
+
+    // Get current booking status
+    const [bookings] = await db.query(
+      'SELECT booking_status, driver_id FROM independent_bookings WHERE id = ?',
+      [bookingId]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const booking = bookings[0];
+
+    // Only allow cancellation if booking is pending or accepted
+    if (!['pending', 'accepted'].includes(booking.booking_status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel booking with status: ${booking.booking_status}`
+      });
+    }
+
+    // Update booking status to cancelled
+    await db.query(
+      `UPDATE independent_bookings 
+       SET booking_status = 'cancelled',
+           cancellation_reason = ?,
+           cancelled_by = ?,
+           cancelled_at = NOW(),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [reason || 'No reason provided', cancelled_by || 'customer', bookingId]
+    );
+
+    // If driver was assigned, make driver available again
+    if (booking.driver_id) {
+      await db.query(
+        'UPDATE drivers SET is_available = 1, updated_at = NOW() WHERE id = ?',
+        [booking.driver_id]
+      );
+      console.log(`✅ Driver ${booking.driver_id} set back to available`);
+    }
+
+    console.log(`✅ Booking ${bookingId} cancelled by ${cancelled_by || 'customer'}`);
+
+    return res.json({
+      success: true,
+      message: 'Booking cancelled successfully',
+      data: {
+        booking_id: bookingId,
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error cancelling booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to cancel booking',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
