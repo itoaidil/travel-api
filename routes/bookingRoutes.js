@@ -96,14 +96,15 @@ router.post('/delivery/create', async (req, res) => {
     }
 
     // Payment status based on demo mode or payment method
-    let paymentStatus = 'pending';
+    // Valid ENUM values: 'unpaid', 'paid', 'refunded', 'cancelled'
+    let paymentStatus = 'unpaid'; // default
     let bookingStatus = 'pending';
 
     if (demo_payment_success) {
-      paymentStatus = 'completed';
+      paymentStatus = 'paid';
       bookingStatus = 'pending'; // Still pending, waiting for driver
     } else if (normalizedPaymentMethod === 'cash') {
-      paymentStatus = 'pending'; // Will be paid on delivery
+      paymentStatus = 'unpaid'; // Will be paid on delivery
       bookingStatus = 'pending';
     }
 
