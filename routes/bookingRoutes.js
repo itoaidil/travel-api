@@ -133,6 +133,7 @@ router.post('/delivery/create', async (req, res) => {
         distance_km,
         total_fare,
         base_price,
+        total_price,
         item_size,
         item_type,
         item_photo_url,
@@ -151,7 +152,7 @@ router.post('/delivery/create', async (req, res) => {
         NULL, '', '',
         ?, ?, ?, ?, ?, 
         ?, ?, ?, ?, 
-        ?, ?, ?, ?, ?, 
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, 
         ?, ?, ?, ?,
         NOW(), NOW(), NOW()
@@ -175,17 +176,18 @@ router.post('/delivery/create', async (req, res) => {
       dropoff_lng,           // 14
       distance_km,           // 15
       total_fare,            // 16
-      total_fare,            // 17 (base_price = total_fare for now)
-      item_size,             // 18
-      item_type,             // 19
-      item_photo_url,        // 20
-      recipient_name,        // 21
-      recipient_phone,       // 22
-      recipient_address_detail,  // 23
-      recipient_note_to_driver,  // 24
-      normalizedPaymentMethod,   // 25
-      paymentStatus,         // 26
-      bookingStatus          // 27
+      total_fare,            // 17 (base_price = total_fare)
+      total_fare,            // 18 (total_price = total_fare)
+      item_size,             // 19
+      item_type,             // 20
+      item_photo_url,        // 21
+      recipient_name,        // 22
+      recipient_phone,       // 23
+      recipient_address_detail,  // 24
+      recipient_note_to_driver,  // 25
+      normalizedPaymentMethod,   // 26
+      paymentStatus,         // 27
+      bookingStatus          // 28
     ]);
 
     const bookingId = result.insertId;
