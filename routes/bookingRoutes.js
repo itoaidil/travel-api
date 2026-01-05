@@ -86,12 +86,22 @@ router.post('/delivery/create', async (req, res) => {
     const customerEmail = customer.email || '';
 
     // Normalize payment method to valid ENUM values
-    // Valid values: 'cash', 'gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'credit_card', 'bank_transfer'
+    // Database ENUM: 'cash', 'midtrans', 'wallet', 'bank_transfer'
     let normalizedPaymentMethod = 'cash'; // default
     if (payment_method) {
-      const validMethods = ['cash', 'gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'credit_card', 'bank_transfer'];
-      if (validMethods.includes(payment_method.toLowerCase())) {
-        normalizedPaymentMethod = payment_method.toLowerCase();
+      const method = payment_method.toLowerCase();
+      
+      // Map e-wallets to 'wallet'
+      const walletMethods = ['gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'qris', 'wallet'];
+      
+      if (method === 'cash') {
+        normalizedPaymentMethod = 'cash';
+      } else if (walletMethods.includes(method)) {
+        normalizedPaymentMethod = 'wallet';
+      } else if (method === 'midtrans' || method === 'credit_card') {
+        normalizedPaymentMethod = 'midtrans';
+      } else if (method === 'bank_transfer') {
+        normalizedPaymentMethod = 'bank_transfer';
       }
     }
 
