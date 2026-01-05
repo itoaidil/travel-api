@@ -61,11 +61,16 @@ router.post('/register', async (req, res) => {
     const customerId = result.insertId;
 
     // Also create a user record for compatibility (optional, based on your system)
-    await db.query(
-      `INSERT INTO users (email, password, user_type, created_at) 
-       VALUES (?, ?, 'customer', NOW())`,
-      [email, hashedPassword]
-    );
+    try {
+      await db.query(
+        `INSERT INTO users (email, username, password, user_type, created_at) 
+         VALUES (?, ?, ?, 'customer', NOW())`,
+        [email, email.split('@')[0], hashedPassword]
+      );
+    } catch (userInsertError) {
+      // Ignore if users table insert fails (customer table is primary)
+      console.log('⚠️  Users table insert skipped:', userInsertError.message);
+    }
 
     return res.status(201).json({
       success: true,
