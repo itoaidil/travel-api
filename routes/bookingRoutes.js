@@ -217,25 +217,27 @@ router.post('/delivery/create', async (req, res) => {
       console.log('📲 Finding nearby drivers...');
       
       // Get drivers within 10km radius who are active
-      // Formula: 1 degree ≈ 111km, so 10km ≈ 0.09 degrees
+      // Join with driver_locations to get latest position
       const radiusDegrees = 10 / 111; // ~10km radius
       
       const [nearbyDrivers] = await db.query(`
         SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
-               d.current_latitude, d.current_longitude,
+               dl.latitude, dl.longitude,
                (6371 * acos(
-                 cos(radians(?)) * cos(radians(d.current_latitude)) *
-                 cos(radians(d.current_longitude) - radians(?)) +
-                 sin(radians(?)) * sin(radians(d.current_latitude))
+                 cos(radians(?)) * cos(radians(dl.latitude)) *
+                 cos(radians(dl.longitude) - radians(?)) +
+                 sin(radians(?)) * sin(radians(dl.latitude))
                )) AS distance_km
         FROM independent_drivers d
+        INNER JOIN driver_locations dl ON d.id = dl.driver_id
         WHERE d.status = 'active'
           AND d.vehicle_type = ?
           AND d.fcm_token IS NOT NULL
-          AND d.current_latitude IS NOT NULL
-          AND d.current_longitude IS NOT NULL
-          AND d.current_latitude BETWEEN ? - ? AND ? + ?
-          AND d.current_longitude BETWEEN ? - ? AND ? + ?
+          AND dl.latitude IS NOT NULL
+          AND dl.longitude IS NOT NULL
+          AND dl.latitude BETWEEN ? - ? AND ? + ?
+          AND dl.longitude BETWEEN ? - ? AND ? + ?
+        GROUP BY d.id
         HAVING distance_km <= 10
         ORDER BY distance_km ASC
         LIMIT 10

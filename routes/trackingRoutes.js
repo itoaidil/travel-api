@@ -53,18 +53,15 @@ router.post('/heartbeat', async (req, res) => {
     await db.query(
       `INSERT INTO driver_locations 
        (driver_id, latitude, longitude, accuracy, speed, heading, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE
+         latitude = VALUES(latitude),
+         longitude = VALUES(longitude),
+         accuracy = VALUES(accuracy),
+         speed = VALUES(speed),
+         heading = VALUES(heading),
+         timestamp = VALUES(timestamp)`,
       [driver_id, latitude, longitude, accuracy || null, speed || null, heading || null]
-    );
-
-    // Update driver's last known location in independent_drivers table
-    await db.query(
-      `UPDATE independent_drivers 
-       SET current_latitude = ?,
-           current_longitude = ?,
-           last_location_update = NOW()
-       WHERE id = ?`,
-      [latitude, longitude, driver_id]
     );
 
     res.json({
