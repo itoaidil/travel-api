@@ -24,9 +24,9 @@ router.post('/online-status', async (req, res) => {
     const [result] = await db.query(
       `UPDATE independent_drivers 
        SET status = ?, 
-           last_online_at = IF(? = 'active', NOW(), last_online_at)
+           updated_at = NOW()
        WHERE id = ?`,
-      [newStatus, newStatus, driver_id]
+      [newStatus, driver_id]
     );
 
     if (result.affectedRows === 0) {
@@ -88,9 +88,8 @@ router.post('/register-fcm', async (req, res) => {
     await db.query(
       `UPDATE independent_drivers 
        SET fcm_token = ?, 
-           last_fcm_update = NOW(),
            status = 'active',
-           last_online_at = NOW()
+           updated_at = NOW()
        WHERE id = ?`,
       [fcm_token, driver_id]
     );
