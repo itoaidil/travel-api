@@ -132,6 +132,7 @@ router.post('/delivery/create', async (req, res) => {
         dropoff_lng,
         distance_km,
         total_fare,
+        base_price,
         item_size,
         item_type,
         item_photo_url,
