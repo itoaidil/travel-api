@@ -146,7 +146,7 @@ router.post('/delivery/create', async (req, res) => {
         updated_at
       ) VALUES (
         ?, 'package', ?, ?, ?, ?, 
-        NULL, NULL, NULL, 
+        NULL, '', '',
         ?, ?, ?, ?, ?, 
         ?, ?, ?, ?, 
         ?, ?, ?, ?, ?, 
