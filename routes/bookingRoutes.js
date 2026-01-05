@@ -91,17 +91,20 @@ router.post('/delivery/create', async (req, res) => {
     if (payment_method) {
       const method = payment_method.toLowerCase();
       
-      // Map e-wallets to 'wallet'
-      const walletMethods = ['gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'qris', 'wallet'];
+      // E-wallet methods that will be processed via Midtrans
+      const eWalletMethods = ['gopay', 'ovo', 'dana', 'shopeepay', 'linkaja', 'qris'];
       
       if (method === 'cash') {
         normalizedPaymentMethod = 'cash';
-      } else if (walletMethods.includes(method)) {
-        normalizedPaymentMethod = 'wallet';
+      } else if (eWalletMethods.includes(method)) {
+        // If demo mode, store as 'wallet', otherwise 'midtrans' (will be processed by Midtrans)
+        normalizedPaymentMethod = demo_payment_success ? 'wallet' : 'midtrans';
       } else if (method === 'midtrans' || method === 'credit_card') {
         normalizedPaymentMethod = 'midtrans';
       } else if (method === 'bank_transfer') {
         normalizedPaymentMethod = 'bank_transfer';
+      } else if (method === 'wallet') {
+        normalizedPaymentMethod = 'wallet';
       }
     }
 
