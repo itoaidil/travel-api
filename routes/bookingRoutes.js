@@ -144,36 +144,45 @@ router.post('/delivery/create', async (req, res) => {
         booking_status,
         created_at,
         updated_at
-      ) VALUES (?, 'package', ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (
+        ?, 'package', ?, ?, ?, ?, 
+        NULL, NULL, NULL, 
+        ?, ?, ?, ?, ?, 
+        ?, ?, ?, ?, 
+        ?, ?, ?, ?, ?, 
+        ?, ?, ?, ?, 
+        ?, ?, ?,
+        NOW(), NOW()
+      )
     `;
 
     const [result] = await db.query(insertQuery, [
-      bookingCode,
-      customer_id,
-      customerName,
-      customerPhone,
-      customerEmail,
-      vehicle_type,
-      'Pickup Location', // pickup_location (nama singkat)
-      pickup_address,
-      pickup_lat,
-      pickup_lng,
-      'Dropoff Location', // dropoff_location (nama singkat)
-      dropoff_address,
-      dropoff_lat,
-      dropoff_lng,
-      distance_km,
-      total_fare,
-      item_size,
-      item_type,
-      item_photo_url,
-      recipient_name,
-      recipient_phone,
-      recipient_address_detail,
-      recipient_note_to_driver,
-      normalizedPaymentMethod, // Use normalized payment method
-      paymentStatus,
-      bookingStatus
+      bookingCode,           // 1
+      customer_id,           // 2
+      customerName,          // 3
+      customerPhone,         // 4
+      customerEmail,         // 5
+      vehicle_type,          // 6
+      'Pickup Location',     // 7
+      pickup_address,        // 8
+      pickup_lat,            // 9
+      pickup_lng,            // 10
+      'Dropoff Location',    // 11
+      dropoff_address,       // 12
+      dropoff_lat,           // 13
+      dropoff_lng,           // 14
+      distance_km,           // 15
+      total_fare,            // 16
+      item_size,             // 17
+      item_type,             // 18
+      item_photo_url,        // 19
+      recipient_name,        // 20
+      recipient_phone,       // 21
+      recipient_address_detail,  // 22
+      recipient_note_to_driver,  // 23
+      normalizedPaymentMethod,   // 24
+      paymentStatus,         // 25
+      bookingStatus          // 26
     ]);
 
     const bookingId = result.insertId;
