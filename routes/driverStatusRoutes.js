@@ -17,13 +17,16 @@ router.post('/online-status', async (req, res) => {
   }
 
   try {
-    // Update driver online status
+    // Map is_online boolean to status enum (active/offline)
+    const newStatus = is_online ? 'active' : 'offline';
+    
+    // Update driver status
     const [result] = await db.query(
       `UPDATE independent_drivers 
-       SET is_online = ?, 
-           last_online_at = IF(? = true, NOW(), last_online_at)
-       WHERE driver_id = ?`,
-      [is_online, is_online, driver_id]
+       SET status = ?, 
+           last_online_at = IF(? = 'active', NOW(), last_online_at)
+       WHERE id = ?`,
+      [newStatus, newStatus, driver_id]
     );
 
     if (result.affectedRows === 0) {
@@ -33,10 +36,13 @@ router.post('/online-status', async (req, res) => {
       });
     }
 
+    console.log(`✅ Driver ${driver_id} status updated to: ${newStatus}`);
+
     res.json({
       success: true,
       driver_id: driver_id,
       is_online: is_online,
+      status: newStatus,
       message: is_online ? 'Driver is now online' : 'Driver is now offline'
     });
 
@@ -67,7 +73,7 @@ router.post('/register-fcm', async (req, res) => {
   try {
     // Check if driver exists
     const [drivers] = await db.query(
-      'SELECT driver_id FROM independent_drivers WHERE driver_id = ?',
+      'SELECT id, status FROM independent_drivers WHERE id = ?',
       [driver_id]
     );
 
@@ -78,15 +84,19 @@ router.post('/register-fcm', async (req, res) => {
       });
     }
 
-    // Update or insert FCM token
+    // Update FCM token and auto-set driver to active status
     await db.query(
       `UPDATE independent_drivers 
        SET fcm_token = ?, 
            device_type = ?,
-           fcm_updated_at = NOW()
-       WHERE driver_id = ?`,
+           last_fcm_update = NOW(),
+           status = 'active',
+           last_online_at = NOW()
+       WHERE id = ?`,
       [fcm_token, device_type || 'android', driver_id]
     );
+    
+    console.log(`✅ FCM token registered for driver ${driver_id}, status set to active`);
 
     res.json({
       success: true,
@@ -121,7 +131,7 @@ router.get('/profile', async (req, res) => {
   try {
     const [drivers] = await db.query(
       `SELECT 
-        driver_id,
+        id as driver_id,
         full_name,
         phone,
         email,
@@ -130,18 +140,14 @@ router.get('/profile', async (req, res) => {
         vehicle_plate,
         vehicle_color,
         service_type_allowed,
-        is_active,
-        is_online,
+        status,
         rating,
         total_trips,
         total_earnings,
-        total_rejections,
-        acceptance_rate,
-        current_active_orders,
         created_at,
         last_online_at
        FROM independent_drivers 
-       WHERE driver_id = ?`,
+       WHERE id = ?`,
       [driver_id]
     );
 
