@@ -28,7 +28,7 @@ router.post('/heartbeat', async (req, res) => {
   try {
     // Check if driver exists and is active
     const [drivers] = await db.query(
-      'SELECT driver_id, is_online, is_active FROM independent_drivers WHERE driver_id = ?',
+      'SELECT id, status FROM independent_drivers WHERE id = ?',
       [driver_id]
     );
 
@@ -41,11 +41,11 @@ router.post('/heartbeat', async (req, res) => {
 
     const driver = drivers[0];
 
-    // Only accept location updates from online and active drivers
-    if (!driver.is_online || !driver.is_active) {
+    // Only accept location updates from active drivers
+    if (driver.status !== 'active' && driver.status !== 'offline') {
       return res.status(400).json({
         success: false,
-        message: 'Driver is not online or not active'
+        message: 'Driver account is not active'
       });
     }
 
@@ -63,7 +63,7 @@ router.post('/heartbeat', async (req, res) => {
        SET current_latitude = ?,
            current_longitude = ?,
            last_location_update = NOW()
-       WHERE driver_id = ?`,
+       WHERE id = ?`,
       [latitude, longitude, driver_id]
     );
 

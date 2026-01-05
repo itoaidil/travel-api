@@ -414,4 +414,72 @@ router.delete('/drivers/:id', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/add-fcm-column
+ * Add FCM token column to independent_drivers table
+ */
+router.post('/add-fcm-column', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
+  try {
+    console.log('🔧 Adding fcm_token column to independent_drivers table...');
+    
+    // Add fcm_token column
+    await db.query(`
+      ALTER TABLE independent_drivers 
+      ADD COLUMN fcm_token VARCHAR(255)
+    `);
+    
+    console.log('✅ fcm_token column added');
+    
+    // Add index
+    try {
+      await db.query(`
+        ALTER TABLE independent_drivers
+        ADD INDEX idx_fcm_token (fcm_token)
+      `);
+      console.log('✅ Index on fcm_token created');
+    } catch (err) {
+      // Index might already exist, ignore error
+      console.log('⚠️ Index may already exist:', err.message);
+    }
+    
+    // Add last_fcm_update column
+    await db.query(`
+      ALTER TABLE independent_drivers
+      ADD COLUMN last_fcm_update TIMESTAMP NULL
+    `);
+    
+    console.log('✅ last_fcm_update column added');
+    
+    res.json({
+      success: true,
+      message: 'FCM token columns added successfully'
+    });
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    
+    // If column already exists, return success
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      return res.json({
+        success: true,
+        message: 'FCM token column already exists'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add FCM token column',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

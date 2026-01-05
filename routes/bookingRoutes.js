@@ -216,27 +216,26 @@ router.post('/delivery/create', async (req, res) => {
     try {
       console.log('📲 Finding nearby drivers...');
       
-      // Get drivers within 10km radius who are online and available
+      // Get drivers within 10km radius who are active
       // Formula: 1 degree ≈ 111km, so 10km ≈ 0.09 degrees
       const radiusDegrees = 10 / 111; // ~10km radius
       
       const [nearbyDrivers] = await db.query(`
         SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
-               d.current_lat, d.current_lng,
+               d.current_latitude, d.current_longitude,
                (6371 * acos(
-                 cos(radians(?)) * cos(radians(d.current_lat)) *
-                 cos(radians(d.current_lng) - radians(?)) +
-                 sin(radians(?)) * sin(radians(d.current_lat))
+                 cos(radians(?)) * cos(radians(d.current_latitude)) *
+                 cos(radians(d.current_longitude) - radians(?)) +
+                 sin(radians(?)) * sin(radians(d.current_latitude))
                )) AS distance_km
-        FROM drivers d
-        WHERE d.is_online = 1
-          AND d.is_available = 1
+        FROM independent_drivers d
+        WHERE d.status = 'active'
           AND d.vehicle_type = ?
           AND d.fcm_token IS NOT NULL
-          AND d.current_lat IS NOT NULL
-          AND d.current_lng IS NOT NULL
-          AND d.current_lat BETWEEN ? - ? AND ? + ?
-          AND d.current_lng BETWEEN ? - ? AND ? + ?
+          AND d.current_latitude IS NOT NULL
+          AND d.current_longitude IS NOT NULL
+          AND d.current_latitude BETWEEN ? - ? AND ? + ?
+          AND d.current_longitude BETWEEN ? - ? AND ? + ?
         HAVING distance_km <= 10
         ORDER BY distance_km ASC
         LIMIT 10
