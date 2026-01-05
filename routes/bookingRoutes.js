@@ -98,6 +98,7 @@ router.post('/delivery/create', async (req, res) => {
     }
 
     // Insert booking into independent_bookings table
+    // booking_type should be 'package' for delivery (sesuai dengan ENUM di database)
     const insertQuery = `
       INSERT INTO independent_bookings (
         booking_code,
@@ -129,7 +130,7 @@ router.post('/delivery/create', async (req, res) => {
         booking_status,
         created_at,
         updated_at
-      ) VALUES (?, 'delivery', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, 'package', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
 
     const [result] = await db.query(insertQuery, [
