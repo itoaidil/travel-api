@@ -52,6 +52,9 @@ app.use('/api/driver', require('./routes/driverChatRoutes')); // Driver chat/inb
 // Customer endpoints (for customer app)
 app.use('/api/customer', require('./routes/customerRoutes')); // Customer login, register, bookings
 
+// Upload endpoints (for photo uploads)
+app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat images, profile photos
+
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
 
