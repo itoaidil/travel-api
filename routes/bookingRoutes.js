@@ -142,6 +142,7 @@ router.post('/delivery/create', async (req, res) => {
         payment_method,
         payment_status,
         booking_status,
+        pickup_datetime,
         created_at,
         updated_at
       ) VALUES (
@@ -152,6 +153,7 @@ router.post('/delivery/create', async (req, res) => {
         ?, ?, ?, ?, ?, 
         ?, ?, ?, ?, 
         ?, ?, ?,
+        NOW(),
         NOW(), NOW()
       )
     `;
