@@ -229,16 +229,17 @@ router.post('/delivery/create', async (req, res) => {
                  sin(radians(?)) * sin(radians(dl.latitude))
                )) AS distance_km
         FROM independent_drivers d
+        INNER JOIN driver_locations dl ON d.id = dl.driver_id
         INNER JOIN (
-          SELECT driver_id, latitude, longitude, 
-                 MAX(created_at) as last_update
+          SELECT driver_id, MAX(created_at) as max_created
           FROM driver_locations
           WHERE is_active = 1
-          GROUP BY driver_id, latitude, longitude
-        ) dl ON d.id = dl.driver_id
+          GROUP BY driver_id
+        ) latest ON dl.driver_id = latest.driver_id AND dl.created_at = latest.max_created
         WHERE d.status = 'active'
           AND d.vehicle_type = ?
           AND d.fcm_token IS NOT NULL
+          AND dl.is_active = 1
           AND dl.latitude IS NOT NULL
           AND dl.longitude IS NOT NULL
           AND dl.latitude BETWEEN ? - ? AND ? + ?
