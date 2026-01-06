@@ -234,7 +234,7 @@ router.post('/delivery/create', async (req, res) => {
                  MAX(created_at) as last_update
           FROM driver_locations
           WHERE is_active = 1
-          GROUP BY driver_id
+          GROUP BY driver_id, latitude, longitude
         ) dl ON d.id = dl.driver_id
         WHERE d.status = 'active'
           AND d.vehicle_type = ?
