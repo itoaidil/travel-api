@@ -52,15 +52,16 @@ router.post('/heartbeat', async (req, res) => {
     // Insert location record
     await db.query(
       `INSERT INTO driver_locations 
-       (driver_id, latitude, longitude, accuracy, speed, heading, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())
+       (driver_id, latitude, longitude, accuracy, speed, heading, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, NOW())
        ON DUPLICATE KEY UPDATE
          latitude = VALUES(latitude),
          longitude = VALUES(longitude),
          accuracy = VALUES(accuracy),
          speed = VALUES(speed),
          heading = VALUES(heading),
-         timestamp = VALUES(timestamp)`,
+         is_active = 1,
+         updated_at = NOW()`,
       [driver_id, latitude, longitude, accuracy || null, speed || null, heading || null]
     );
 

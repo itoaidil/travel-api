@@ -231,8 +231,9 @@ router.post('/delivery/create', async (req, res) => {
         FROM independent_drivers d
         INNER JOIN (
           SELECT driver_id, latitude, longitude, 
-                 MAX(timestamp) as last_update
+                 MAX(created_at) as last_update
           FROM driver_locations
+          WHERE is_active = 1
           GROUP BY driver_id
         ) dl ON d.id = dl.driver_id
         WHERE d.status = 'active'
