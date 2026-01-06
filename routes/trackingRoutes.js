@@ -97,13 +97,14 @@ router.get('/current/:driver_id', async (req, res) => {
         dl.accuracy,
         dl.speed,
         dl.heading,
-        dl.timestamp,
-        d.is_online,
+        dl.created_at,
+        dl.is_active,
+        d.status,
         d.full_name
        FROM driver_locations dl
-       JOIN independent_drivers d ON dl.driver_id = d.driver_id
+       JOIN independent_drivers d ON dl.driver_id = d.id
        WHERE dl.driver_id = ?
-       ORDER BY dl.timestamp DESC
+       ORDER BY dl.created_at DESC
        LIMIT 1`,
       [driver_id]
     );
