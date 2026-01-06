@@ -42,8 +42,8 @@ router.get('/inbox/:driverId', async (req, res) => {
         u.username as customer_name,
         
         -- Booking info from independent_bookings
-        ib.pickup_location,
-        ib.destination_location,
+        ib.pickup_address,
+        ib.dropoff_address,
         ib.status as booking_status,
         ib.booking_date,
         ib.booking_time,
