@@ -58,6 +58,9 @@ app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat i
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
 
+// Test endpoints (for debugging)
+app.use('/api/test', require('./routes/testNotificationRoutes')); // Test notification system
+
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
 
