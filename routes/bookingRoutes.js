@@ -681,4 +681,111 @@ router.put('/:booking_id/cancel', async (req, res) => {
   }
 });
 
+/**
+ * Complete booking (driver finishes trip)
+ * POST /api/bookings/:booking_id/complete
+ * 
+ * Calculates driver_earnings (80%) and platform_fee (20%)
+ * Updates booking status to 'completed'
+ */
+router.post('/:booking_id/complete', async (req, res) => {
+  try {
+    const { booking_id } = req.params;
+    const { driver_id } = req.body;
+
+    console.log(`🏁 Completing booking ${booking_id} by driver ${driver_id}`);
+
+    // Validate required fields
+    if (!driver_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_id is required'
+      });
+    }
+
+    // Check if booking exists
+    const [bookings] = await db.query(
+      'SELECT * FROM independent_bookings WHERE id = ?',
+      [booking_id]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const booking = bookings[0];
+
+    // Verify driver owns this booking
+    if (booking.driver_id !== parseInt(driver_id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not assigned to this booking'
+      });
+    }
+
+    // Only allow completion if booking is accepted or in_progress
+    if (!['accepted', 'in_progress'].includes(booking.booking_status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot complete booking with status: ${booking.booking_status}`
+      });
+    }
+
+    // Calculate earnings (80% driver, 20% platform)
+    const totalPrice = parseFloat(booking.total_price) || 0;
+    const platformFeePercentage = 20;
+    const platformFee = (totalPrice * platformFeePercentage) / 100;
+    const driverEarnings = totalPrice - platformFee;
+
+    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings}, Platform: ${platformFee}`);
+
+    // Update booking with earnings and status
+    await db.query(
+      `UPDATE independent_bookings 
+       SET booking_status = 'completed',
+           driver_earnings = ?,
+           platform_fee = ?,
+           platform_fee_percentage = ?,
+           completed_at = NOW(),
+           actual_dropoff_datetime = NOW(),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [driverEarnings, platformFee, platformFeePercentage, booking_id]
+    );
+
+    // Make driver available again
+    await db.query(
+      'UPDATE independent_drivers SET is_available = 1, updated_at = NOW() WHERE id = ?',
+      [driver_id]
+    );
+
+    console.log(`✅ Booking ${booking_id} completed successfully`);
+    console.log(`✅ Driver ${driver_id} earned: Rp ${driverEarnings.toLocaleString()}`);
+
+    return res.json({
+      success: true,
+      message: 'Booking completed successfully',
+      data: {
+        booking_id: booking_id,
+        status: 'completed',
+        total_price: totalPrice,
+        driver_earnings: driverEarnings,
+        platform_fee: platformFee,
+        completed_at: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error completing booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to complete booking',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

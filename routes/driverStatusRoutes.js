@@ -246,4 +246,198 @@ router.post('/change-password', async (req, res) => {
   }
 });
 
+/**
+ * Get driver dashboard statistics
+ * GET /api/driver/dashboard/:driver_id
+ * 
+ * Returns:
+ * - Total earnings (lifetime)
+ * - Today's earnings
+ * - Completed trips (lifetime)
+ * - Completed trips today
+ * - Pending bookings
+ * - Accepted bookings (in progress)
+ */
+router.get('/dashboard/:driver_id', async (req, res) => {
+  try {
+    const { driver_id } = req.params;
+
+    console.log(`📊 Fetching dashboard for driver ${driver_id}`);
+
+    // Get total earnings (lifetime)
+    const [totalEarnings] = await db.query(
+      `SELECT 
+        COALESCE(SUM(driver_earnings), 0) as total_earnings,
+        COUNT(*) as total_trips
+      FROM independent_bookings 
+      WHERE driver_id = ? 
+        AND booking_status = 'completed'
+        AND driver_earnings IS NOT NULL`,
+      [driver_id]
+    );
+
+    // Get today's earnings
+    const [todayEarnings] = await db.query(
+      `SELECT 
+        COALESCE(SUM(driver_earnings), 0) as today_earnings,
+        COUNT(*) as today_trips
+      FROM independent_bookings 
+      WHERE driver_id = ? 
+        AND booking_status = 'completed'
+        AND DATE(completed_at) = CURDATE()
+        AND driver_earnings IS NOT NULL`,
+      [driver_id]
+    );
+
+    // Get active bookings count
+    const [activeBookings] = await db.query(
+      `SELECT 
+        COUNT(*) as accepted_count
+      FROM independent_bookings 
+      WHERE driver_id = ? 
+        AND booking_status IN ('accepted', 'in_progress')`,
+      [driver_id]
+    );
+
+    // Get recent completed bookings (last 5)
+    const [recentTrips] = await db.query(
+      `SELECT 
+        id,
+        booking_code,
+        pickup_address,
+        dropoff_address,
+        distance_km,
+        total_price,
+        driver_earnings,
+        completed_at,
+        customer_rating
+      FROM independent_bookings 
+      WHERE driver_id = ? 
+        AND booking_status = 'completed'
+      ORDER BY completed_at DESC
+      LIMIT 5`,
+      [driver_id]
+    );
+
+    const dashboard = {
+      total_earnings: parseFloat(totalEarnings[0].total_earnings) || 0,
+      total_trips: parseInt(totalEarnings[0].total_trips) || 0,
+      today_earnings: parseFloat(todayEarnings[0].today_earnings) || 0,
+      today_trips: parseInt(todayEarnings[0].today_trips) || 0,
+      active_bookings: parseInt(activeBookings[0].accepted_count) || 0,
+      recent_trips: recentTrips
+    };
+
+    console.log(`✅ Dashboard data:`, dashboard);
+
+    return res.json({
+      success: true,
+      data: dashboard
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching driver dashboard:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get driver booking history with earnings
+ * GET /api/driver/history/:driver_id
+ * 
+ * Query params:
+ * - status: filter by booking_status (optional)
+ * - limit: number of records (default 20)
+ * - offset: pagination offset (default 0)
+ */
+router.get('/history/:driver_id', async (req, res) => {
+  try {
+    const { driver_id } = req.params;
+    const { status, limit = 20, offset = 0 } = req.query;
+
+    console.log(`📜 Fetching history for driver ${driver_id}`);
+
+    let query = `
+      SELECT 
+        id,
+        booking_code,
+        booking_type,
+        customer_name,
+        customer_phone,
+        pickup_address,
+        dropoff_address,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+        distance_km,
+        booking_status,
+        payment_status,
+        payment_method,
+        total_price,
+        driver_earnings,
+        platform_fee,
+        customer_rating,
+        customer_review,
+        accepted_at,
+        started_at,
+        completed_at,
+        created_at
+      FROM independent_bookings 
+      WHERE driver_id = ?
+    `;
+
+    const params = [driver_id];
+
+    if (status) {
+      query += ' AND booking_status = ?';
+      params.push(status);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
+
+    const [bookings] = await db.query(query, params);
+
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM independent_bookings WHERE driver_id = ?';
+    const countParams = [driver_id];
+    
+    if (status) {
+      countQuery += ' AND booking_status = ?';
+      countParams.push(status);
+    }
+
+    const [countResult] = await db.query(countQuery, countParams);
+    const total = countResult[0].total;
+
+    console.log(`✅ Found ${bookings.length} bookings (total: ${total})`);
+
+    return res.json({
+      success: true,
+      data: {
+        bookings,
+        pagination: {
+          total,
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          has_more: (parseInt(offset) + bookings.length) < total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching driver history:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch history',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

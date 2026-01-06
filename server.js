@@ -58,6 +58,9 @@ app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat i
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
 
+// Payment endpoints (for Midtrans webhook)
+app.use('/api/payment', require('./routes/paymentRoutes')); // Payment notifications & status
+
 // Test endpoints (for debugging)
 app.use('/api/test', require('./routes/testNotificationRoutes')); // Test notification system
 
