@@ -48,9 +48,7 @@ const pool = mysql.createPool({
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  connectTimeout: 3000, // 3 seconds timeout (reduced from 10s)
-  acquireTimeout: 3000, // 3 seconds timeout to acquire connection from pool
-  timeout: 5000, // 5 seconds query timeout
+  connectTimeout: 3000, // 3 seconds connection timeout (reduced from 10s)
 });
 
 // Minimal, safe startup logging (no secrets)
