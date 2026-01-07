@@ -440,4 +440,87 @@ router.get('/history/:driver_id', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/driver/test-notification/:driver_id
+ * Test push notification untuk driver dengan booking tertentu
+ */
+router.post('/test-notification/:driver_id', async (req, res) => {
+  const { driver_id } = req.params;
+  const { booking_id } = req.body;
+
+  try {
+    // Get driver FCM token
+    const [drivers] = await db.query(
+      'SELECT fcm_token, full_name FROM independent_drivers WHERE id = ?',
+      [driver_id]
+    );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    const driver = drivers[0];
+    if (!driver.fcm_token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Driver does not have FCM token registered'
+      });
+    }
+
+    // Get booking data
+    const [bookings] = await db.query(
+      'SELECT * FROM independent_bookings WHERE id = ?',
+      [booking_id]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const booking = bookings[0];
+
+    // Import notification service
+    const { sendNewBookingNotification } = require('../services/notificationService');
+
+    // Send notification
+    const result = await sendNewBookingNotification(driver.fcm_token, {
+      booking_id: booking.id,
+      customer_name: booking.customer_name || 'Customer',
+      pickup_address: booking.pickup_address,
+      dropoff_address: booking.dropoff_address,
+      total_price: booking.total_price,
+      vehicle_type: booking.vehicle_type
+    });
+
+    return res.json({
+      success: true,
+      message: 'Test notification sent',
+      driver: {
+        id: driver_id,
+        name: driver.full_name,
+        has_fcm_token: true
+      },
+      booking: {
+        id: booking.id,
+        status: booking.booking_status
+      },
+      notification_result: result
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending test notification:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send test notification',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
