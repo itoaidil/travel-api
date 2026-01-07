@@ -285,7 +285,7 @@ router.post('/delivery/create', async (req, res) => {
                   (driver_id, booking_id, notification_type, title, message, data, created_at)
                 VALUES (?, ?, 'new_booking', ?, ?, ?, NOW())`,
                 [
-                  driver.driver_id,
+                  driver.id,  // Use driver.id instead of driver.driver_id
                   bookingId,
                   '🚚 Pesanan Baru!',
                   `Pengiriman ${item_type} - Jarak ${distance_km}km`,
@@ -303,9 +303,9 @@ router.post('/delivery/create', async (req, res) => {
                   })
                 ]
               );
-              console.log(`✅ Notification saved to DB for driver ${driver.driver_id}`);
+              console.log(`✅ Notification saved to DB for driver ${driver.id}`);
             } catch (dbError) {
-              console.error(`⚠️ Failed to save notification for driver ${driver.driver_id}:`, dbError.message);
+              console.error(`⚠️ Failed to save notification for driver ${driver.id}:`, dbError.message);
             }
           }
         }
