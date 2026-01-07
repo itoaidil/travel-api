@@ -341,7 +341,6 @@ router.get('/:booking_id', async (req, res) => {
         customer_id,
         customer_name,
         customer_phone,
-        customer_email,
         driver_id,
         vehicle_type,
         pickup_address,
@@ -354,7 +353,6 @@ router.get('/:booking_id', async (req, res) => {
         total_fare,
         item_size,
         item_type,
-        item_weight,
         item_photo_url,
         recipient_name,
         recipient_phone,
@@ -363,13 +361,8 @@ router.get('/:booking_id', async (req, res) => {
         payment_method,
         payment_status,
         booking_status,
-        driver_earnings,
-        platform_fee,
-        platform_fee_percentage,
         created_at,
-        updated_at,
-        accepted_at,
-        completed_at
+        updated_at
       FROM independent_bookings
       WHERE id = ?`,
       [bookingId]
