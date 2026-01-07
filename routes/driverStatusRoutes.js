@@ -488,15 +488,21 @@ router.post('/test-notification/:driver_id', async (req, res) => {
     // Import notification service
     const { sendNewBookingNotification } = require('../services/notificationService');
 
-    // Send notification
-    const result = await sendNewBookingNotification(driver.fcm_token, {
-      booking_id: booking.id,
-      customer_name: booking.customer_name || 'Customer',
-      pickup_address: booking.pickup_address,
-      dropoff_address: booking.dropoff_address,
-      total_price: booking.total_price,
-      vehicle_type: booking.vehicle_type
-    });
+    // Send notification (with driver_id to save to database)
+    const result = await sendNewBookingNotification(
+      driver.fcm_token, 
+      {
+        booking_id: booking.id,
+        customer_name: booking.customer_name || 'Customer',
+        pickup_address: booking.pickup_address,
+        dropoff_address: booking.dropoff_address,
+        total_price: booking.total_price,
+        vehicle_type: booking.vehicle_type,
+        item_type: booking.item_type || 'paket',
+        distance_km: booking.distance_km || 0
+      },
+      driver_id  // Pass driver_id to save notification to database
+    );
 
     return res.json({
       success: true,

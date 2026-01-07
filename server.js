@@ -48,6 +48,7 @@ app.use('/api/broadcast', require('./routes/broadcastRoutes')); // Driver broadc
 app.use('/api/driver', require('./routes/driverStatusRoutes')); // Driver status & FCM
 app.use('/api/driver-auth', require('./routes/driverRegistrationRoutes')); // Driver registration & login
 app.use('/api/driver', require('./routes/driverChatRoutes')); // Driver chat/inbox
+app.use('/api/driver/notifications', require('./routes/driverNotificationRoutes')); // Driver notifications
 
 // Customer endpoints (for customer app)
 app.use('/api/customer', require('./routes/customerRoutes')); // Customer login, register, bookings

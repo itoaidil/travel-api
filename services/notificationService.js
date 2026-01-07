@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const db = require('../config/database');
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
@@ -19,11 +20,42 @@ if (!admin.apps.length) {
 }
 
 /**
+ * Save notification to database
+ */
+async function saveNotificationToDatabase(driverId, bookingData, notificationType = 'new_booking') {
+  try {
+    const title = notificationType === 'new_booking' ? '🚚 Pesanan Baru!' : 'Notifikasi';
+    const message = `Pengiriman ${bookingData.item_type || 'paket'} - Jarak ${bookingData.distance_km || 0}km`;
+    
+    await db.query(
+      `INSERT INTO driver_notifications 
+       (driver_id, booking_id, notification_type, title, message, data, is_read, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, NOW())`,
+      [
+        driverId,
+        bookingData.booking_id,
+        notificationType,
+        title,
+        message,
+        JSON.stringify(bookingData)
+      ]
+    );
+    
+    console.log(`✅ Notification saved to database for driver ${driverId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error saving notification to database:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Send push notification to driver about new booking
  * @param {string} fcmToken - Driver's FCM token
  * @param {object} bookingData - Booking information
+ * @param {number} driverId - Driver ID (optional, for saving to database)
  */
-async function sendNewBookingNotification(fcmToken, bookingData) {
+async function sendNewBookingNotification(fcmToken, bookingData, driverId = null) {
   if (!fcmToken) {
     console.log('⚠️ No FCM token provided, skipping notification');
     return { success: false, error: 'No FCM token' };
@@ -69,6 +101,12 @@ async function sendNewBookingNotification(fcmToken, bookingData) {
   try {
     const response = await admin.messaging().send(message);
     console.log('✅ Notification sent successfully:', response);
+    
+    // Save notification to database if driver_id is provided
+    if (driverId) {
+      await saveNotificationToDatabase(driverId, bookingData, 'new_booking');
+    }
+    
     return { success: true, messageId: response };
   } catch (error) {
     console.error('❌ Error sending notification:', error);
@@ -136,4 +174,5 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
 module.exports = {
   sendNewBookingNotification,
   sendNotificationToMultipleDrivers,
+  saveNotificationToDatabase,
 };
