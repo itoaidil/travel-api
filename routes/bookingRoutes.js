@@ -276,6 +276,38 @@ router.post('/delivery/create', async (req, res) => {
           });
           
           console.log('✅ Notifications sent:', notificationResult);
+
+          // Save notification to database for each driver
+          for (const driver of nearbyDrivers) {
+            try {
+              await db.query(
+                `INSERT INTO driver_notifications 
+                  (driver_id, booking_id, notification_type, title, message, data, created_at)
+                VALUES (?, ?, 'new_booking', ?, ?, ?, NOW())`,
+                [
+                  driver.driver_id,
+                  bookingId,
+                  '🚚 Pesanan Baru!',
+                  `Pengiriman ${item_type} - Jarak ${distance_km}km`,
+                  JSON.stringify({
+                    booking_id: bookingId,
+                    booking_code: bookingCode,
+                    vehicle_type,
+                    pickup_address,
+                    dropoff_address,
+                    distance_km,
+                    total_price: total_fare,
+                    item_type,
+                    item_size,
+                    customer_name: customerName
+                  })
+                ]
+              );
+              console.log(`✅ Notification saved to DB for driver ${driver.driver_id}`);
+            } catch (dbError) {
+              console.error(`⚠️ Failed to save notification for driver ${driver.driver_id}:`, dbError.message);
+            }
+          }
         }
       } else {
         console.log('⚠️ No nearby drivers found');
