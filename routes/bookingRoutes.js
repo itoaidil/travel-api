@@ -735,13 +735,37 @@ router.post('/:booking_id/complete', async (req, res) => {
       });
     }
 
-    // Calculate earnings (80% driver, 20% platform)
-    const totalPrice = parseFloat(booking.total_price) || 0;
-    const platformFeePercentage = 20;
-    const platformFee = (totalPrice * platformFeePercentage) / 100;
-    const driverEarnings = totalPrice - platformFee;
+    // Get pricing info from database to calculate correct percentages
+    const [pricingRows] = await db.query(
+      `SELECT driver_percentage, platform_percentage 
+       FROM service_vehicle_pricing 
+       WHERE vehicle_type = ? AND is_active = 1
+       LIMIT 1`,
+      [booking.vehicle_type]
+    );
 
-    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings}, Platform: ${platformFee}`);
+    if (pricingRows.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: `Pricing configuration not found for vehicle type: ${booking.vehicle_type}`
+      });
+    }
+
+    const pricing = pricingRows[0];
+    const driverPercentage = parseFloat(pricing.driver_percentage) || 80;
+    const platformFeePercentage = parseFloat(pricing.platform_percentage) || 20;
+
+    // Validate that percentages add up to 100
+    if (driverPercentage + platformFeePercentage !== 100) {
+      console.warn(`⚠️ Warning: Percentages don't add up to 100: driver=${driverPercentage}%, platform=${platformFeePercentage}%`);
+    }
+
+    // Calculate earnings based on database percentages
+    const totalPrice = parseFloat(booking.total_price) || 0;
+    const driverEarnings = (totalPrice * driverPercentage) / 100;
+    const platformFee = (totalPrice * platformFeePercentage) / 100;
+
+    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings} (${driverPercentage}%), Platform: ${platformFee} (${platformFeePercentage}%)`);
 
     // Update booking with earnings and status
     await db.query(
