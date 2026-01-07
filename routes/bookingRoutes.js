@@ -562,11 +562,12 @@ router.post('/:booking_id/accept', async (req, res) => {
       [driver_id, driver.full_name, driver.phone, bookingId]
     );
 
-    // Update driver availability
-    await db.query(
-      'UPDATE independent_drivers SET is_available = 0, updated_at = NOW() WHERE id = ?',
-      [driver_id]
-    );
+    // Update driver availability (if column exists)
+    // Note: independent_drivers may not have is_available column
+    // await db.query(
+    //   'UPDATE independent_drivers SET is_available = 0, updated_at = NOW() WHERE id = ?',
+    //   [driver_id]
+    // );
 
     console.log(`✅ Booking ${bookingId} accepted by driver ${driver_id}`);
 
