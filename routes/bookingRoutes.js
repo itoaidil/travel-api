@@ -317,8 +317,93 @@ router.post('/delivery/create', async (req, res) => {
   }
 });
 
-/**
- * GET /api/bookings/delivery/:booking_id
+/** * GET /api/bookings/:booking_id
+ * Get booking details by ID (for driver app)
+ */
+router.get('/:booking_id', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
+  try {
+    const bookingId = req.params.booking_id;
+
+    const [bookings] = await db.query(
+      `SELECT 
+        id,
+        booking_code,
+        booking_type,
+        customer_id,
+        customer_name,
+        customer_phone,
+        customer_email,
+        driver_id,
+        driver_name,
+        driver_phone,
+        vehicle_type,
+        pickup_address,
+        pickup_lat,
+        pickup_lng,
+        pickup_phone,
+        dropoff_address,
+        dropoff_lat,
+        dropoff_lng,
+        dropoff_phone,
+        distance_km,
+        total_price,
+        base_fare,
+        distance_fare,
+        item_size,
+        item_type,
+        item_weight,
+        item_photo_url,
+        recipient_name,
+        recipient_phone,
+        recipient_address_detail,
+        recipient_note_to_driver,
+        payment_method,
+        payment_status,
+        booking_status,
+        driver_earnings,
+        platform_fee,
+        platform_fee_percentage,
+        created_at,
+        updated_at,
+        accepted_at,
+        completed_at
+      FROM independent_bookings
+      WHERE id = ?`,
+      [bookingId]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: bookings[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get booking',
+      error: error.message
+    });
+  }
+});
+
+/** * GET /api/bookings/delivery/:booking_id
  * Get delivery booking details
  */
 router.get('/delivery/:booking_id', async (req, res) => {
