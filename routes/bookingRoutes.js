@@ -513,9 +513,9 @@ router.post('/:booking_id/accept', async (req, res) => {
       });
     }
 
-    // Get driver info
+    // Get driver info (use independent_drivers as authoritative)
     const [drivers] = await db.query(
-      'SELECT id, full_name, phone, vehicle_type FROM drivers WHERE id = ?',
+      'SELECT id, full_name, phone, vehicle_type FROM independent_drivers WHERE id = ?',
       [driver_id]
     );
 
@@ -564,7 +564,7 @@ router.post('/:booking_id/accept', async (req, res) => {
 
     // Update driver availability
     await db.query(
-      'UPDATE drivers SET is_available = 0, updated_at = NOW() WHERE id = ?',
+      'UPDATE independent_drivers SET is_available = 0, updated_at = NOW() WHERE id = ?',
       [driver_id]
     );
 
