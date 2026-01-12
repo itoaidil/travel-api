@@ -19,13 +19,22 @@ if (EMAIL_MODE === 'production') {
     console.warn('⚠️  EMAIL_USER and EMAIL_APP_PASSWORD not set. Email will be logged to console.');
   } else {
     transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports
       auth: {
         user: EMAIL_USER,
         pass: EMAIL_APP_PASSWORD
-      }
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,
+      socketTimeout: 20000
     });
     console.log('✅ Email transporter initialized for production mode');
+    console.log('📧 SMTP: smtp.gmail.com:587 | User:', EMAIL_USER);
   }
 }
 
