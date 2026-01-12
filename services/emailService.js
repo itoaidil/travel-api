@@ -166,29 +166,7 @@ async function sendOTPEmail(email, otpCode) {
 </html>
   `;
 
-  // Prefer Resend HTTP API in production if available (avoids SMTP timeouts)
-  if (EMAIL_MODE === 'production' && resend) {
-    try {
-      const { data, error } = await resend.emails.send({
-        from: EMAIL_FROM || 'Hantar Travel <onboarding@resend.dev>',
-        to: email,
-        subject: emailSubject,
-        html: emailHTML
-      });
-
-      if (error) {
-        console.error('⚠️  Resend send error:', error.message || error);
-      } else {
-        console.log('✅ OTP email sent via Resend to:', email, '| id:', data?.id);
-        return true;
-      }
-    } catch (err) {
-      console.error('⚠️  Resend exception:', err.message || err);
-      // fall through to SMTP
-    }
-  }
-
-  // PRODUCTION MODE: Send real email (with timeout safeguard)
+  // PRODUCTION MODE: Try SMTP first (more reliable)
   if (EMAIL_MODE === 'production' && transporter) {
     try {
       const sendPromise = transporter.sendMail({
@@ -208,7 +186,29 @@ async function sendOTPEmail(email, otpCode) {
       return true;
     } catch (error) {
       console.error('⚠️  SMTP email send failed:', error.message);
-      // Don't throw - just log. Registration succeeds, user can resend OTP later.
+      // Fall through to Resend
+    }
+  }
+
+  // Fallback to Resend HTTP API if SMTP failed
+  if (EMAIL_MODE === 'production' && resend) {
+    try {
+      const { data, error } = await resend.emails.send({
+        from: 'Hantar Travel <onboarding@resend.dev>',
+        to: email,
+        subject: emailSubject,
+        html: emailHTML
+      });
+
+      if (error) {
+        console.error('⚠️  Resend send error:', error.message || error);
+        return false;
+      } else {
+        console.log('✅ OTP email sent via Resend to:', email, '| id:', data?.id);
+        return true;
+      }
+    } catch (err) {
+      console.error('⚠️  Resend exception:', err.message || err);
       return false;
     }
   }
