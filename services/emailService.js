@@ -10,7 +10,7 @@ const { Resend } = require('resend');
 const EMAIL_MODE = process.env.EMAIL_MODE || 'testing'; // 'testing' or 'production'
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar Travel <noreply@hantartravel.com>';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar Travel <noreply@primarylineindo.com>';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
