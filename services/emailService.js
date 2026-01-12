@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 /**
  * Email Service for OTP Verification
@@ -10,6 +11,8 @@ const EMAIL_MODE = process.env.EMAIL_MODE || 'testing'; // 'testing' or 'product
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD;
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar Travel <noreply@hantartravel.com>';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 // Create email transporter (only for production mode)
 let transporter = null;
@@ -161,6 +164,28 @@ async function sendOTPEmail(email, otpCode) {
 </body>
 </html>
   `;
+
+  // Prefer Resend HTTP API in production if available (avoids SMTP timeouts)
+  if (EMAIL_MODE === 'production' && resend) {
+    try {
+      const { data, error } = await resend.emails.send({
+        from: EMAIL_FROM || 'Hantar Travel <onboarding@resend.dev>',
+        to: email,
+        subject: emailSubject,
+        html: emailHTML
+      });
+
+      if (error) {
+        console.error('⚠️  Resend send error:', error.message || error);
+      } else {
+        console.log('✅ OTP email sent via Resend to:', email, '| id:', data?.id);
+        return true;
+      }
+    } catch (err) {
+      console.error('⚠️  Resend exception:', err.message || err);
+      // fall through to SMTP
+    }
+  }
 
   // TESTING MODE: Log to console
   if (EMAIL_MODE === 'testing' || !transporter) {
