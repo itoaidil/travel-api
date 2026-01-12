@@ -49,14 +49,15 @@ function generateOTP() {
 }
 
 /**
- * Send OTP email to user
+ * Send OTP email to user (non-blocking, never throws)
  * @param {string} email - Recipient email address
  * @param {string} otpCode - 6-digit OTP code
- * @returns {Promise<boolean>} - Success status
+ * @returns {Promise<boolean>} - Always returns true/false, never throws
  */
 async function sendOTPEmail(email, otpCode) {
-  const emailSubject = 'Kode Verifikasi Hantar Travel';
-  const emailHTML = `
+  try {
+    const emailSubject = 'Kode Verifikasi Hantar Travel';
+    const emailHTML = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -187,33 +188,43 @@ async function sendOTPEmail(email, otpCode) {
     }
   }
 
-  // TESTING MODE: Log to console
-  if (EMAIL_MODE === 'testing' || !transporter) {
-    console.log('\n📧 ========== EMAIL OTP (TESTING MODE) ==========');
-    console.log('To:', email);
-    console.log('Subject:', emailSubject);
-    console.log('OTP Code:', otpCode);
-    console.log('Expires: 5 minutes');
-    console.log('=============================================\n');
-    return true;
+  // PRODUCTION MODE: Send real email (with timeout safeguard)
+  if (EMAIL_MODE === 'production' && transporter) {
+    try {
+      const sendPromise = transporter.sendMail({
+        from: EMAIL_FROM,
+        to: email,
+        subject: emailSubject,
+        html: emailHTML
+      });
+
+      // Timeout after 8 seconds to avoid blocking registration
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('SMTP timeout')), 8000)
+      );
+
+      const info = await Promise.race([sendPromise, timeoutPromise]);
+      console.log('✅ OTP email sent via SMTP to:', email, '| msgid:', info.messageId);
+      return true;
+    } catch (error) {
+      console.error('⚠️  SMTP email send failed:', error.message);
+      // Don't throw - just log. Registration succeeds, user can resend OTP later.
+      return false;
+    }
   }
 
-  // PRODUCTION MODE: Send real email
-  try {
-    const info = await transporter.sendMail({
-      from: EMAIL_FROM,
-      to: email,
-      subject: emailSubject,
-      html: emailHTML
-    });
-
-    console.log('✅ OTP email sent successfully to:', email);
-    console.log('📧 Message ID:', info.messageId);
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to send OTP email:', error.message);
-    throw new Error('Gagal mengirim email. Silakan coba lagi.');
-  }
+  // Fallback: log to console if no transport available
+  console.log('\n📧 ========== EMAIL OTP (FALLBACK) ==========');
+  console.log('To:', email);
+  console.log('OTP Code:', otpCode);
+  console.log('Expires: 5 minutes');
+  console.log('=============================================\n');
+  return true;
+} catch (outerError) {
+  // Outer try-catch: never throw, always return false
+  console.error('⚠️  Unexpected error in sendOTPEmail:', outerError.message || outerError);
+  return false;
+}
 }
 
 /**
