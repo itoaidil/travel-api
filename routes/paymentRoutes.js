@@ -7,6 +7,68 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const crypto = require('crypto');
+const { createTransaction } = require('../config/midtrans');
+
+/**
+ * Create Midtrans Payment Token (Snap Token)
+ * POST /api/payment/create-token
+ * 
+ * Generates Snap token for payment page
+ */
+router.post('/create-token', async (req, res) => {
+  try {
+    const { booking_id, amount, customer_name, customer_email, customer_phone } = req.body;
+
+    console.log('💳 Creating payment token for booking:', booking_id);
+
+    // Generate unique order ID
+    const orderId = `BOOK-${booking_id}-${Date.now()}`;
+
+    // Prepare transaction details for Midtrans
+    const transactionDetails = {
+      transaction_details: {
+        order_id: orderId,
+        gross_amount: amount,
+      },
+      customer_details: {
+        first_name: customer_name || 'Customer',
+        email: customer_email || 'customer@hantar.com',
+        phone: customer_phone || '08123456789',
+      },
+      item_details: [
+        {
+          id: `booking-${booking_id}`,
+          price: amount,
+          quantity: 1,
+          name: 'Antar Paket Delivery Service',
+        },
+      ],
+    };
+
+    // Create Snap token via Midtrans
+    const result = await createTransaction(transactionDetails);
+
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to create Snap token');
+    }
+
+    console.log('✅ Snap token created:', result.token);
+
+    return res.json({
+      success: true,
+      token: result.token,
+      redirect_url: result.redirect_url,
+      order_id: orderId,
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating payment token:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create payment token',
+    });
+  }
+});
 
 /**
  * Midtrans Payment Notification Webhook
