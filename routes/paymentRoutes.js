@@ -111,6 +111,15 @@ router.post('/midtrans/notification', async (req, res) => {
       });
     }
 
+    // Handle test notification from Midtrans dashboard
+    if (order_id && order_id.startsWith('payment_notif_test_')) {
+      console.log('✅ Test notification from Midtrans dashboard - OK');
+      return res.status(200).json({
+        success: true,
+        message: 'Test notification received successfully'
+      });
+    }
+
     // Parse booking_id from order_id (format: BOOK-{booking_id}-{timestamp})
     const bookingIdMatch = order_id.match(/BOOK-(\d+)-/);
     if (!bookingIdMatch) {
