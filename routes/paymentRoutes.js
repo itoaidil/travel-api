@@ -197,9 +197,103 @@ router.post('/midtrans/notification', async (req, res) => {
 
     console.log(`✅ Booking ${bookingId} payment updated: ${paymentStatus}`);
 
-    // If payment successful and booking is still pending, update to accepted
+    // If payment successful and booking is still pending, notify drivers
     if (paymentStatus === 'paid' && booking.booking_status === 'pending') {
-      console.log('💳 Payment confirmed, booking ready for driver acceptance');
+      console.log('💳 Payment confirmed! Notifying drivers...');
+      
+      // Get nearby drivers (same logic as booking creation)
+      const { sendNotificationToMultipleDrivers } = require('../services/notificationService');
+      const radiusDegrees = 10 / 111; // ~10km radius
+      
+      const [nearbyDrivers] = await db.query(`
+        SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
+               dl.latitude, dl.longitude,
+               (6371 * acos(
+                 cos(radians(?)) * cos(radians(dl.latitude)) *
+                 cos(radians(dl.longitude) - radians(?)) +
+                 sin(radians(?)) * sin(radians(dl.latitude))
+               )) AS distance_km
+        FROM independent_drivers d
+        INNER JOIN driver_locations dl ON d.id = dl.driver_id
+        INNER JOIN (
+          SELECT driver_id, MAX(created_at) as max_created
+          FROM driver_locations
+          WHERE is_active = 1
+          GROUP BY driver_id
+        ) latest ON dl.driver_id = latest.driver_id AND dl.created_at = latest.max_created
+        WHERE d.status = 'active'
+          AND d.vehicle_type = ?
+          AND d.fcm_token IS NOT NULL
+          AND dl.is_active = 1
+          AND dl.latitude IS NOT NULL
+          AND dl.longitude IS NOT NULL
+          AND dl.latitude BETWEEN ? - ? AND ? + ?
+          AND dl.longitude BETWEEN ? - ? AND ? + ?
+        HAVING distance_km <= 10
+        ORDER BY distance_km ASC
+        LIMIT 10
+      `, [
+        booking.pickup_lat, booking.pickup_lng, booking.pickup_lat,
+        booking.vehicle_type,
+        booking.pickup_lat, radiusDegrees, booking.pickup_lat, radiusDegrees,
+        booking.pickup_lng, radiusDegrees, booking.pickup_lng, radiusDegrees
+      ]);
+
+      if (nearbyDrivers.length > 0) {
+        console.log(`📍 Found ${nearbyDrivers.length} nearby drivers for booking ${bookingId}`);
+        
+        const fcmTokens = nearbyDrivers.map(d => d.fcm_token).filter(Boolean);
+        
+        if (fcmTokens.length > 0) {
+          const notificationResult = await sendNotificationToMultipleDrivers(fcmTokens, {
+            booking_id: bookingId,
+            booking_code: booking.booking_code,
+            vehicle_type: booking.vehicle_type,
+            pickup_address: booking.pickup_address,
+            dropoff_address: booking.dropoff_address,
+            pickup_lat: booking.pickup_lat,
+            pickup_lng: booking.pickup_lng,
+            distance_km: booking.distance_km,
+            total_fare: booking.total_fare,
+            item_type: booking.item_type,
+            item_size: booking.item_size
+          });
+          
+          console.log('✅ Driver notifications sent:', notificationResult);
+
+          // Save notification to database for each driver
+          for (const driver of nearbyDrivers) {
+            try {
+              await db.query(
+                `INSERT INTO driver_notifications 
+                  (driver_id, booking_id, notification_type, title, message, data, created_at)
+                VALUES (?, ?, 'new_booking', ?, ?, ?, NOW())`,
+                [
+                  driver.id,
+                  bookingId,
+                  '🚚 Pesanan Baru (LUNAS)!',
+                  `Pengiriman ${booking.item_type || 'paket'} - Jarak ${booking.distance_km}km`,
+                  JSON.stringify({
+                    booking_id: bookingId,
+                    booking_code: booking.booking_code,
+                    vehicle_type: booking.vehicle_type,
+                    pickup_address: booking.pickup_address,
+                    dropoff_address: booking.dropoff_address,
+                    distance_km: booking.distance_km,
+                    total_fare: booking.total_fare
+                  })
+                ]
+              );
+            } catch (notifError) {
+              console.error('Error saving driver notification:', notifError);
+            }
+          }
+        } else {
+          console.log('⚠️ No FCM tokens available for nearby drivers');
+        }
+      } else {
+        console.log('⚠️ No nearby drivers found for booking', bookingId);
+      }
     }
 
     return res.json({

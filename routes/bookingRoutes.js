@@ -258,6 +258,11 @@ router.post('/delivery/create', async (req, res) => {
       if (nearbyDrivers.length > 0) {
         console.log(`📍 Found ${nearbyDrivers.length} nearby drivers`);
         
+        // ⚠️ NOTIFIKASI DINONAKTIFKAN - Driver akan dapat notifikasi setelah payment berhasil
+        // Notifikasi sekarang dikirim dari webhook payment (routes/paymentRoutes.js)
+        console.log('⏳ Driver notifications will be sent after payment confirmation');
+        
+        /*
         const fcmTokens = nearbyDrivers.map(d => d.fcm_token).filter(Boolean);
         
         if (fcmTokens.length > 0) {
@@ -308,7 +313,7 @@ router.post('/delivery/create', async (req, res) => {
               console.error(`⚠️ Failed to save notification for driver ${driver.id}:`, dbError.message);
             }
           }
-        }
+        */
       } else {
         console.log('⚠️ No nearby drivers found');
       }
