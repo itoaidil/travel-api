@@ -78,6 +78,16 @@ router.post('/create-token', async (req, res) => {
  * Updates booking payment status and fills payment columns
  */
 router.post('/midtrans/notification', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    console.error('❌ Database not available');
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+  
   try {
     const notification = req.body;
     
