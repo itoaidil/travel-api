@@ -680,6 +680,41 @@ router.post('/:booking_id/accept', async (req, res) => {
 
     console.log(`✅ Booking ${bookingId} accepted by driver ${driver_id}`);
 
+    // Create chat room for customer-driver communication
+    try {
+      // Get booking details for chat room
+      const [bookingDetails] = await db.query(
+        'SELECT customer_id, booking_code FROM independent_bookings WHERE id = ?',
+        [bookingId]
+      );
+
+      if (bookingDetails.length > 0) {
+        const booking = bookingDetails[0];
+        
+        // Check if chat room already exists
+        const [existingRoom] = await db.query(
+          'SELECT id FROM chat_rooms WHERE booking_id = ? AND booking_type = "package"',
+          [bookingId]
+        );
+
+        if (existingRoom.length === 0) {
+          // Create new chat room
+          await db.query(
+            `INSERT INTO chat_rooms 
+              (booking_id, booking_type, customer_id, driver_id, status, created_at, updated_at)
+            VALUES (?, 'package', ?, ?, 'active', NOW(), NOW())`,
+            [bookingId, booking.customer_id, driver_id]
+          );
+          console.log(`✅ Chat room created for booking ${bookingId}`);
+        } else {
+          console.log(`ℹ️ Chat room already exists for booking ${bookingId}`);
+        }
+      }
+    } catch (chatError) {
+      console.error('⚠️ Failed to create chat room:', chatError.message);
+      // Don't fail the booking acceptance if chat room creation fails
+    }
+
     return res.json({
       success: true,
       message: 'Booking accepted successfully',
