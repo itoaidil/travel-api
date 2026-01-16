@@ -251,17 +251,39 @@ router.post('/chat/:bookingId/send', async (req, res) => {
     if (chatRoom.length > 0) {
       const customerId = chatRoom[0].customer_id;
       
-      // Get customer FCM token (assuming customers table has fcm_token)
+      // Get customer FCM token
       const [customerTokens] = await db.query(
-        'SELECT fcm_token FROM users WHERE id = ? AND fcm_token IS NOT NULL',
+        'SELECT fcm_token FROM customers WHERE id = ? AND fcm_token IS NOT NULL',
         [customerId]
       );
 
-      // TODO: Send push notification to customer
-      // if (customerTokens.length > 0) {
-      //   const fcmToken = customerTokens[0].fcm_token;
-      //   // Send FCM notification here
-      // }
+      // Send push notification to customer
+      if (customerTokens.length > 0) {
+        const fcmToken = customerTokens[0].fcm_token;
+        const admin = require('firebase-admin');
+        
+        try {
+          const messagePayload = {
+            notification: {
+              title: `Pesan dari ${driverName}`,
+              body: message_type === 'image' ? '📷 Mengirim foto' : message_text,
+            },
+            data: {
+              type: 'new_message',
+              booking_id: bookingId.toString(),
+              sender_type: 'driver',
+              sender_name: driverName,
+              message_type: message_type,
+            },
+            token: fcmToken
+          };
+
+          await admin.messaging().send(messagePayload);
+          console.log('✅ Push notification sent to customer');
+        } catch (notifError) {
+          console.error('⚠️ Failed to send notification:', notifError.message);
+        }
+      }
     }
 
     return res.status(201).json({

@@ -53,6 +53,7 @@ app.use('/api/admin', require('./routes/adminMigrationRoutes')); // Admin migrat
 
 // Customer endpoints (for customer app)
 app.use('/api/customer', require('./routes/customerRoutes')); // Customer login, register, bookings
+app.use('/api/customer', require('./routes/customerChatRoutes')); // Customer chat with driver
 
 // Upload endpoints (for photo uploads)
 app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat images, profile photos
