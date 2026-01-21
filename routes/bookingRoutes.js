@@ -123,8 +123,15 @@ router.post('/delivery/create', async (req, res) => {
       bookingStatus = 'pending';
     }
 
+    // Determine booking_type based on vehicle and item
+    // If motorcycle without item_type -> it's a ride (instant ride motor)
+    // If has item_type -> it's a delivery (antar paket)
+    let actualBookingType = 'delivery'; // default for antar paket
+    if (vehicle_type === 'motorcycle' && !item_type) {
+      actualBookingType = 'ride'; // instant ride motor/passenger
+    }
+
     // Insert booking into independent_bookings table
-    // booking_type should be 'package' for delivery (sesuai dengan ENUM di database)
     const insertQuery = `
       INSERT INTO independent_bookings (
         booking_code,
@@ -163,7 +170,7 @@ router.post('/delivery/create', async (req, res) => {
         created_at,
         updated_at
       ) VALUES (
-        ?, 'package', ?, ?, ?, ?, 
+        ?, ?, ?, ?, ?, ?, 
         NULL, '', '',
         ?, ?, ?, ?, ?, 
         ?, ?, ?, ?, 
@@ -176,11 +183,12 @@ router.post('/delivery/create', async (req, res) => {
 
     const [result] = await db.query(insertQuery, [
       bookingCode,           // 1
-      customer_id,           // 2
-      customerName,          // 3
-      customerPhone,         // 4
-      customerEmail,         // 5
-      vehicle_type,          // 6
+      actualBookingType,     // 2 - 'ride' or 'delivery'
+      customer_id,           // 3
+      customerName,          // 4
+      customerPhone,         // 5
+      customerEmail,         // 6
+      vehicle_type,          // 7
       'Pickup Location',     // 7
       pickup_address,        // 8
       pickup_lat,            // 9

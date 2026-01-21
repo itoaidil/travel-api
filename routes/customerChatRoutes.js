@@ -97,9 +97,9 @@ router.post('/chat/:bookingId/send', async (req, res) => {
       });
     }
 
-    // Get booking info
+    // Get booking info including booking_type
     const [bookingInfo] = await db.query(
-      'SELECT vehicle_type, driver_id FROM independent_bookings WHERE id = ? AND customer_id = ?',
+      'SELECT booking_type, vehicle_type, driver_id FROM independent_bookings WHERE id = ? AND customer_id = ?',
       [bookingId, customer_id]
     );
 
@@ -110,12 +110,8 @@ router.post('/chat/:bookingId/send', async (req, res) => {
       });
     }
 
-    const vehicleType = bookingInfo[0].vehicle_type;
+    const bookingType = bookingInfo[0].booking_type; // Use actual booking_type from DB
     const driverId = bookingInfo[0].driver_id;
-    let bookingType = 'package';
-    if (vehicleType === 'motor' || vehicleType === 'mobil') {
-      bookingType = 'ride';
-    }
 
     // Insert message
     const [result] = await db.query(
