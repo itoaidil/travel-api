@@ -258,62 +258,66 @@ router.post('/delivery/create', async (req, res) => {
       if (nearbyDrivers.length > 0) {
         console.log(`📍 Found ${nearbyDrivers.length} nearby drivers`);
         
-        // ⚠️ NOTIFIKASI DINONAKTIFKAN - Driver akan dapat notifikasi setelah payment berhasil
-        // Notifikasi sekarang dikirim dari webhook payment (routes/paymentRoutes.js)
-        console.log('⏳ Driver notifications will be sent after payment confirmation');
-        
-        /*
-        const fcmTokens = nearbyDrivers.map(d => d.fcm_token).filter(Boolean);
-        
-        if (fcmTokens.length > 0) {
-          const notificationResult = await sendNotificationToMultipleDrivers(fcmTokens, {
-            booking_id: bookingId,
-            booking_code: bookingCode,
-            vehicle_type,
-            pickup_address,
-            dropoff_address,
-            pickup_lat,
-            pickup_lng,
-            distance_km,
-            total_fare,
-            item_type,
-            item_size
-          });
+        // Untuk CASH payment, kirim notifikasi langsung
+        // Untuk Midtrans payment, notifikasi dikirim dari webhook setelah payment berhasil
+        if (normalizedPaymentMethod === 'cash') {
+          console.log('💰 CASH payment - sending notifications immediately');
           
-          console.log('✅ Notifications sent:', notificationResult);
+          const fcmTokens = nearbyDrivers.map(d => d.fcm_token).filter(Boolean);
+          
+          if (fcmTokens.length > 0) {
+            const notificationResult = await sendNotificationToMultipleDrivers(fcmTokens, {
+              booking_id: bookingId,
+              booking_code: bookingCode,
+              vehicle_type,
+              pickup_address,
+              dropoff_address,
+              pickup_lat,
+              pickup_lng,
+              distance_km,
+              total_fare,
+              item_type,
+              item_size
+            });
+            
+            console.log('✅ Notifications sent:', notificationResult);
 
-          // Save notification to database for each driver
-          for (const driver of nearbyDrivers) {
-            try {
-              await db.query(
-                `INSERT INTO driver_notifications 
-                  (driver_id, booking_id, notification_type, title, message, data, created_at)
-                VALUES (?, ?, 'new_booking', ?, ?, ?, NOW())`,
-                [
-                  driver.id,  // Use driver.id instead of driver.driver_id
-                  bookingId,
-                  '🚚 Pesanan Baru!',
-                  `Pengiriman ${item_type} - Jarak ${distance_km}km`,
-                  JSON.stringify({
-                    booking_id: bookingId,
-                    booking_code: bookingCode,
-                    vehicle_type,
-                    pickup_address,
-                    dropoff_address,
-                    distance_km,
-                    total_price: total_fare,
-                    item_type,
-                    item_size,
-                    customer_name: customerName
-                  })
-                ]
-              );
-              console.log(`✅ Notification saved to DB for driver ${driver.id}`);
-            } catch (dbError) {
-              console.error(`⚠️ Failed to save notification for driver ${driver.id}:`, dbError.message);
+            // Save notification to database for each driver
+            for (const driver of nearbyDrivers) {
+              try {
+                await db.query(
+                  `INSERT INTO driver_notifications 
+                    (driver_id, booking_id, notification_type, title, message, data, created_at)
+                  VALUES (?, ?, 'new_booking', ?, ?, ?, NOW())`,
+                  [
+                    driver.id,
+                    bookingId,
+                    '🚚 Pesanan Baru!',
+                    `Pengiriman ${item_type} - Jarak ${distance_km}km`,
+                    JSON.stringify({
+                      booking_id: bookingId,
+                      booking_code: bookingCode,
+                      vehicle_type,
+                      pickup_address,
+                      dropoff_address,
+                      distance_km,
+                      total_price: total_fare,
+                      item_type,
+                      item_size,
+                      customer_name: customerName
+                    })
+                  ]
+                );
+                console.log(`✅ Notification saved to DB for driver ${driver.id}`);
+              } catch (dbError) {
+                console.error(`⚠️ Failed to save notification for driver ${driver.id}:`, dbError.message);
+              }
             }
           }
-        */
+        } else {
+          // Midtrans payment - notifikasi dikirim dari webhook setelah payment berhasil
+          console.log('⏳ Midtrans payment - driver notifications will be sent after payment confirmation');
+        }
       } else {
         console.log('⚠️ No nearby drivers found');
       }
