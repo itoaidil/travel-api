@@ -290,9 +290,17 @@ router.post('/chat/:bookingId/send', async (req, res) => {
       success: true,
       message: 'Message sent successfully',
       data: {
-        message_id: result.insertId,
+        id: result.insertId,
         booking_id: bookingId,
-        sent_at: new Date()
+        booking_type: bookingType,
+        sender_id: driver_id,
+        sender_type: 'driver',
+        sender_name: driverName,
+        message_type: message_type,
+        message_text: message_text,
+        image_url: image_url,
+        is_read: false,
+        created_at: new Date()
       }
     });
 
