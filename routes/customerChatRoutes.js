@@ -65,10 +65,7 @@ router.get('/chat/:bookingId/messages', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: {
-        messages,
-        total_messages: messages.length
-      }
+      data: messages  // Return array directly
     });
 
   } catch (error) {
@@ -205,13 +202,13 @@ router.get('/chat/unread-count/:customerId', async (req, res) => {
     const { customerId } = req.params;
 
     const [result] = await db.query(
-      `SELECT SUM(customer_unread_count) as total_unread 
+      `SELECT COALESCE(SUM(customer_unread_count), 0) as total_unread 
        FROM chat_rooms 
        WHERE customer_id = ? AND status = 'active'`,
       [customerId]
     );
 
-    const totalUnread = result[0]?.total_unread || 0;
+    const totalUnread = parseInt(result[0]?.total_unread) || 0;
 
     return res.status(200).json({
       success: true,
