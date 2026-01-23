@@ -273,7 +273,7 @@ router.post('/chat/:bookingId/send', async (req, res) => {
               booking_id: bookingId.toString(),
               sender_type: 'driver',
               sender_name: driverName,
-              message_type: message_type,
+              content_type: message_type, // Changed from message_type to content_type
             },
             token: fcmToken
           };
