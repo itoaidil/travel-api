@@ -694,9 +694,9 @@ router.post('/:booking_id/accept', async (req, res) => {
 
     // Create chat room for customer-driver communication
     try {
-      // Get booking details for chat room
+      // Get booking details for chat room (including booking_type)
       const [bookingDetails] = await db.query(
-        'SELECT customer_id, booking_code FROM independent_bookings WHERE id = ?',
+        'SELECT customer_id, booking_code, booking_type FROM independent_bookings WHERE id = ?',
         [bookingId]
       );
 
@@ -705,8 +705,8 @@ router.post('/:booking_id/accept', async (req, res) => {
         
         // Check if chat room already exists
         const [existingRoom] = await db.query(
-          'SELECT id FROM chat_rooms WHERE booking_id = ? AND booking_type = "package"',
-          [bookingId]
+          'SELECT id FROM chat_rooms WHERE booking_id = ? AND booking_type = ?',
+          [bookingId, booking.booking_type]
         );
 
         if (existingRoom.length === 0) {
@@ -714,8 +714,8 @@ router.post('/:booking_id/accept', async (req, res) => {
           await db.query(
             `INSERT INTO chat_rooms 
               (booking_id, booking_type, customer_id, driver_id, status, created_at, updated_at)
-            VALUES (?, 'package', ?, ?, 'active', NOW(), NOW())`,
-            [bookingId, booking.customer_id, driver_id]
+            VALUES (?, ?, ?, ?, 'active', NOW(), NOW())`,
+            [bookingId, booking.booking_type, booking.customer_id, driver_id]
           );
           console.log(`✅ Chat room created for booking ${bookingId}`);
         } else {
