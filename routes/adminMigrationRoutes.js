@@ -68,4 +68,67 @@ router.get('/migrate', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate/customer-fcm
+ * Add fcm_token column to customers table
+ */
+router.post('/migrate/customer-fcm', async (req, res) => {
+  try {
+    console.log('🔄 Adding fcm_token column to customers table...');
+    
+    // Check if column exists
+    const [columns] = await db.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'customers' 
+        AND COLUMN_NAME = 'fcm_token'
+    `);
+    
+    if (columns.length > 0) {
+      console.log('⚠️ fcm_token column already exists');
+      return res.json({
+        success: true,
+        message: 'fcm_token column already exists',
+        already_exists: true
+      });
+    }
+    
+    // Add fcm_token column
+    await db.query(`
+      ALTER TABLE customers 
+      ADD COLUMN fcm_token VARCHAR(255) DEFAULT NULL
+    `);
+    console.log('✅ fcm_token column added');
+    
+    // Add index
+    try {
+      await db.query(`
+        ALTER TABLE customers 
+        ADD INDEX idx_customers_fcm_token (fcm_token)
+      `);
+      console.log('✅ Index on fcm_token created');
+    } catch (indexError) {
+      if (indexError.code === 'ER_DUP_KEYNAME') {
+        console.log('⚠️ Index already exists');
+      } else {
+        console.warn('⚠️ Index creation warning:', indexError.message);
+      }
+    }
+    
+    return res.json({
+      success: true,
+      message: 'fcm_token column added to customers table successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Migration error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Migration failed',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
