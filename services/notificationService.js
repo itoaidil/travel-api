@@ -50,6 +50,43 @@ async function saveNotificationToDatabase(driverId, bookingData, notificationTyp
 }
 
 /**
+ * Get icon and title based on vehicle type and item type
+ */
+function getNotificationContent(bookingData) {
+  const vehicleType = bookingData.vehicle_type || '';
+  const itemType = bookingData.item_type;
+  
+  // If no item_type, it's likely a ride (passenger)
+  if (!itemType && vehicleType === 'motorcycle') {
+    return {
+      icon: '🏍️',
+      title: 'Pesanan Motor!',
+      body: `Antar Penumpang - Jarak ${bookingData.distance_km || 0}km`
+    };
+  }
+  
+  // Delivery with specific vehicle icons
+  const iconMap = {
+    'motorcycle': '🏍️',
+    'bike': '🚲',
+    'car': '🚗',
+    'truck': '🚚',
+    'skateboard': '🛹',
+    'wheels': '🛼'
+  };
+  
+  const icon = iconMap[vehicleType] || '📦';
+  
+  return {
+    icon: icon,
+    title: `${icon} Pesanan Baru!`,
+    body: itemType 
+      ? `Pengiriman ${itemType} - Jarak ${bookingData.distance_km || 0}km`
+      : `Pesanan ${vehicleType} - Jarak ${bookingData.distance_km || 0}km`
+  };
+}
+
+/**
  * Send push notification to driver about new booking
  * @param {string} fcmToken - Driver's FCM token
  * @param {object} bookingData - Booking information
@@ -61,11 +98,13 @@ async function sendNewBookingNotification(fcmToken, bookingData, driverId = null
     return { success: false, error: 'No FCM token' };
   }
 
+  const content = getNotificationContent(bookingData);
+
   const message = {
     token: fcmToken,
     notification: {
-      title: '🚚 Pesanan Baru!',
-      body: `Pengiriman ${bookingData.item_type || 'paket'} - Jarak ${bookingData.distance_km || 0}km`,
+      title: content.title,
+      body: content.body,
     },
     data: {
       type: 'new_booking',
@@ -125,10 +164,12 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
     return { success: false, error: 'No FCM tokens' };
   }
 
+  const content = getNotificationContent(bookingData);
+
   const message = {
     notification: {
-      title: '🚚 Pesanan Baru!',
-      body: `Pengiriman ${bookingData.item_type || 'paket'} - Jarak ${bookingData.distance_km || 0}km`,
+      title: content.title,
+      body: content.body,
     },
     data: {
       type: 'new_booking',
@@ -171,8 +212,51 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
   }
 }
 
+/**
+ * Send notification to single driver (for chat messages)
+ * @param {string} fcmToken - Driver's FCM token
+ * @param {object} messageData - Message information
+ */
+async function sendNotificationToSingleDriver(fcmToken, messageData) {
+  if (!fcmToken) {
+    console.log('⚠️ No FCM token provided for driver notification');
+    return { success: false, error: 'No FCM token' };
+  }
+
+  const message = {
+    token: fcmToken,
+    notification: {
+      title: `💬 ${messageData.sender_name || 'Customer'}`,
+      body: messageData.message_text || 'Sent a message',
+    },
+    data: {
+      type: 'chat_message',
+      booking_id: String(messageData.booking_id || ''),
+      sender_id: String(messageData.sender_id || ''),
+      sender_type: messageData.sender_type || 'customer',
+    },
+    android: {
+      priority: 'high',
+      notification: {
+        sound: 'default',
+        channelId: 'chat_channel',
+      },
+    },
+  };
+
+  try {
+    const response = await admin.messaging().send(message);
+    console.log('✅ Chat notification sent to driver:', response);
+    return { success: true, messageId: response };
+  } catch (error) {
+    console.error('❌ Error sending chat notification:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   sendNewBookingNotification,
   sendNotificationToMultipleDrivers,
+  sendNotificationToSingleDriver,
   saveNotificationToDatabase,
 };
