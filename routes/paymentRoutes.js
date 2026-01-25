@@ -54,20 +54,25 @@ router.post('/create-token', async (req, res) => {
           id: `booking-${booking_id}`,
           price: grossAmount,
           quantity: 1,
-          name: 'Antar Paket Delivery Service',
+          name: 'Hantar Delivery Service',
         },
       ],
-      // Explicitly enable QRIS + major wallets/bank transfers
+      // Explicitly enable payment methods including QRIS
       enabled_payments: [
-        'qris',
+        'qris',           // QRIS (prioritas pertama)
         'gopay',
-        'shopeepay',
-        'ovo',
-        'dana',
-        'linkaja',
-        'bank_transfer',
+        'shopeepay', 
+        'other_qris',     // QRIS dari bank lain
         'credit_card',
+        'bca_va',
+        'bni_va',
+        'bri_va',
+        'permata_va',
+        'other_va',
       ],
+      callbacks: {
+        finish: 'https://hantar.app/payment/finish',
+      },
     };
 
     // Create Snap token via Midtrans
