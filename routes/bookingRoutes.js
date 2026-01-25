@@ -847,6 +847,15 @@ router.put('/:booking_id/cancel', async (req, res) => {
  * Updates booking status to 'completed'
  */
 router.post('/:booking_id/complete', async (req, res) => {
+  const db = req.db;
+  
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
   try {
     const { booking_id } = req.params;
     const { driver_id } = req.body;
@@ -901,16 +910,15 @@ router.post('/:booking_id/complete', async (req, res) => {
       [booking.vehicle_type]
     );
 
-    if (pricingRows.length === 0) {
-      return res.status(500).json({
-        success: false,
-        message: `Pricing configuration not found for vehicle type: ${booking.vehicle_type}`
-      });
-    }
-
-    const pricing = pricingRows[0];
+    // Fallback default split if pricing not configured
+    const hasPricing = pricingRows.length > 0;
+    const pricing = hasPricing ? pricingRows[0] : { driver_percentage: 80, platform_percentage: 20 };
     const driverPercentage = parseFloat(pricing.driver_percentage) || 80;
     const platformFeePercentage = parseFloat(pricing.platform_percentage) || 20;
+
+    if (!hasPricing) {
+      console.warn(`⚠️ Pricing configuration missing for vehicle: ${booking.vehicle_type}, using default split 80/20`);
+    }
 
     // Validate that percentages add up to 100
     if (driverPercentage + platformFeePercentage !== 100) {
