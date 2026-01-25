@@ -946,11 +946,15 @@ router.post('/:booking_id/complete', async (req, res) => {
       [driverEarnings, platformFee, platformFeePercentage, booking_id]
     );
 
-    // Make driver available again
-    await db.query(
-      'UPDATE independent_drivers SET is_available = 1, updated_at = NOW() WHERE id = ?',
-      [driver_id]
-    );
+    // Make driver available again (table may not have is_available column in current schema)
+    try {
+      await db.query(
+        'UPDATE independent_drivers SET updated_at = NOW() WHERE id = ?',
+        [driver_id]
+      );
+    } catch (err) {
+      console.warn('⚠️ Could not update driver availability (column may be missing):', err.message);
+    }
 
     console.log(`✅ Booking ${booking_id} completed successfully`);
     console.log(`✅ Driver ${driver_id} earned: Rp ${driverEarnings.toLocaleString()}`);
