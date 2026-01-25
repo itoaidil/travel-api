@@ -21,6 +21,20 @@ router.post('/create-token', async (req, res) => {
 
     console.log('💳 Creating payment token for booking:', booking_id);
 
+    // Convert amount to integer with ceiling (round up)
+    // Midtrans IDR tidak boleh ada desimal/cent
+    // Math.ceil() untuk memastikan driver/aplikasi tidak dirugikan dengan pembulatan
+    const grossAmount = Math.ceil(parseFloat(amount) || 0);
+    
+    if (grossAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid amount - must be greater than 0'
+      });
+    }
+
+    console.log(`💰 Amount: ${amount} → Converted: ${grossAmount} (IDR)`);
+
     // Generate unique order ID
     const orderId = `BOOK-${booking_id}-${Date.now()}`;
 
@@ -28,7 +42,7 @@ router.post('/create-token', async (req, res) => {
     const transactionDetails = {
       transaction_details: {
         order_id: orderId,
-        gross_amount: amount,
+        gross_amount: grossAmount,
       },
       customer_details: {
         first_name: customer_name || 'Customer',
@@ -38,10 +52,21 @@ router.post('/create-token', async (req, res) => {
       item_details: [
         {
           id: `booking-${booking_id}`,
-          price: amount,
+          price: grossAmount,
           quantity: 1,
           name: 'Antar Paket Delivery Service',
         },
+      ],
+      // Explicitly enable QRIS + major wallets/bank transfers
+      enabled_payments: [
+        'qris',
+        'gopay',
+        'shopeepay',
+        'ovo',
+        'dana',
+        'linkaja',
+        'bank_transfer',
+        'credit_card',
       ],
     };
 
