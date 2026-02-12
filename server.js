@@ -69,6 +69,7 @@ app.use('/api/payment', require('./routes/paymentRoutes')); // Payment notificat
 
 // Test endpoints (for debugging)
 app.use('/api/test', require('./routes/testNotificationRoutes')); // Test notification system
+app.use('/api/test', require('./routes/testDriverRoutes')); // Test driver creation for withdrawal
 
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
