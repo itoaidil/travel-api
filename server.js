@@ -73,6 +73,11 @@ app.use('/api/test', require('./routes/testNotificationRoutes')); // Test notifi
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
 
+// Withdrawal endpoints (for driver earnings withdrawal)
+app.use('/api/driver/withdrawal', require('./routes/driverWithdrawalRoutes')); // Driver withdrawal requests
+app.use('/api/admin/withdrawal', require('./routes/driverWithdrawalRoutes')); // Admin withdrawal management
+app.use('/api/withdrawal', require('./routes/danaDisburseRoutes')); // DANA disbursement callbacks
+
 // Commented out routes (files not in repo):
 // app.use('/api/student', require('./routes/studentRoutes'));
 // app.use('/api/driver', require('./routes/driverRoutes'));
