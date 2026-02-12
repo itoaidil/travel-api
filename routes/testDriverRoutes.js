@@ -11,14 +11,17 @@ const db = require('../config/database');
 router.post('/create-test-driver', async (req, res) => {
   try {
     // First, create user account
+    const timestamp = Date.now();
+    const email = `driver.test.${timestamp}@example.com`;
+    
     const [userResult] = await db.query(
       `INSERT INTO users (email, role) VALUES (?, 'driver')`,
-      [`driver.test.${Date.now()}@example.com`]
+      [email]
     );
 
     const userId = userResult.insertId;
 
-    // Then create independent driver
+    // Then create independent driver with correct schema
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
         user_id, full_name, phone, email,
@@ -30,16 +33,16 @@ router.post('/create-test-driver', async (req, res) => {
         userId,
         'Budi Santoso Test',
         '081234567890',
-        `driver.test.${userId}@example.com`,
-        'motorcycle',
+        email,
+        'motorcycle',  // Must match enum: bike, motorcycle, car, truck
         `B${userId}TEST`,
-        `LIC${userId}`,
+        `LIC${userId}TEST`,
         'BCA',
         '1234567890',
         'Budi Santoso',
         500000, // Total earnings Rp 500k
-        'active',
-        true
+        'active',  // Must match enum: pending, active, inactive, offline
+        1  // true = verified
       ]
     );
 
