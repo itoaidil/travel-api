@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const danaService = require('../services/danaService');
 
 /**
  * ===== DRIVER WITHDRAWAL ENDPOINTS =====
@@ -410,14 +411,17 @@ router.get('/admin/list', async (req, res) => {
 
 /**
  * POST /api/admin/withdrawal/:id/approve
- * Admin approve withdrawal request (change status to 'processing')
+ * Admin approve withdrawal request and trigger DANA disbursement
  */
 router.post('/admin/:id/approve', async (req, res) => {
   const { id } = req.params;
 
   try {
     const [withdrawals] = await db.query(
-      'SELECT * FROM driver_withdrawals WHERE id = ?',
+      `SELECT dw.*, id.bank_name, id.bank_account_number, id.bank_account_holder
+       FROM driver_withdrawals dw
+       LEFT JOIN independent_drivers id ON dw.driver_id = id.id
+       WHERE dw.id = ?`,
       [id]
     );
 
@@ -443,11 +447,43 @@ router.post('/admin/:id/approve', async (req, res) => {
       [id]
     );
 
-    console.log(`✅ Withdrawal ${id} approved - Processing transfer to ${withdrawal.bank_account_holder}`);
+    console.log(`✅ Withdrawal ${id} approved - Triggering DANA disbursement...`);
+
+    // Trigger DANA disbursement (async - don't wait for completion)
+    danaService.createDisbursement({
+      id: withdrawal.id,
+      driver_id: withdrawal.driver_id,
+      amount: withdrawal.amount,
+      bank_name: withdrawal.bank_name,
+      bank_account_number: withdrawal.bank_account_number,
+      bank_account_holder: withdrawal.bank_account_holder
+    }).then(result => {
+      if (result.success) {
+        console.log(`✅ DANA disbursement initiated for withdrawal ${id}`);
+        // Update dengan transaction_id dari DANA
+        db.query(
+          'UPDATE driver_withdrawals SET transaction_id = ? WHERE id = ?',
+          [result.partnerReferenceNo, id]
+        );
+      } else {
+        console.error(`❌ DANA disbursement failed for withdrawal ${id}:`, result.error);
+        // Rollback to pending if DANA call fails
+        db.query(
+          'UPDATE driver_withdrawals SET status = "pending", processed_at = NULL WHERE id = ?',
+          [id]
+        );
+      }
+    }).catch(error => {
+      console.error(`❌ DANA disbursement error for withdrawal ${id}:`, error);
+      db.query(
+        'UPDATE driver_withdrawals SET status = "pending", processed_at = NULL WHERE id = ?',
+        [id]
+      );
+    });
 
     return res.json({
       success: true,
-      message: 'Withdrawal request approved. Processing transfer...',
+      message: 'Withdrawal approved! DANA disbursement in progress...',
       data: {
         id,
         status: 'processing',
