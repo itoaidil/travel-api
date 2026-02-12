@@ -163,11 +163,13 @@ router.post('/dana-disburse-callback', async (req, res) => {
         SET 
           status = 'completed',
           transaction_id = ?,
+          dana_status = ?,
+          dana_callback_at = NOW(),
           completed_at = NOW(),
           updated_at = NOW()
         WHERE id = ?
       `;
-      updateParams = [disbursementId, withdrawalId];
+      updateParams = [disbursementId, disbursementStatus, withdrawalId];
       
       console.log(`✅ Withdrawal ${withdrawalId} marked as COMPLETED`);
       console.log(`   Amount: ${amount?.value || withdrawal.withdrawal_amount}`);
@@ -183,11 +185,14 @@ router.post('/dana-disburse-callback', async (req, res) => {
         SET 
           status = 'rejected',
           rejection_reason = ?,
-          processed_at = NOW(),
+          dana_status = ?,
+          dana_failure_reason = ?,
+          dana_callback_at = NOW(),
+          completed_at = NOW(),
           updated_at = NOW()
         WHERE id = ?
       `;
-      updateParams = [errorMessage, withdrawalId];
+      updateParams = [errorMessage, disbursementStatus, errorMessage, withdrawalId];
       
       console.log(`❌ Withdrawal ${withdrawalId} marked as REJECTED`);
       console.log(`   Reason: ${errorMessage}`);
@@ -199,11 +204,13 @@ router.post('/dana-disburse-callback', async (req, res) => {
         SET 
           status = 'processing',
           transaction_id = ?,
+          dana_status = ?,
+          dana_callback_at = NOW(),
           processed_at = NOW(),
           updated_at = NOW()
         WHERE id = ?
       `;
-      updateParams = [disbursementId || null, withdrawalId];
+      updateParams = [disbursementId || null, disbursementStatus, withdrawalId];
       
       console.log(`⏳ Withdrawal ${withdrawalId} is PROCESSING`);
     }

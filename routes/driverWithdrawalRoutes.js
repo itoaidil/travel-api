@@ -460,17 +460,25 @@ router.post('/admin/:id/approve', async (req, res) => {
     }).then(result => {
       if (result.success) {
         console.log(`✅ DANA disbursement initiated for withdrawal ${id}`);
-        // Update dengan transaction_id dari DANA
+        // Update dengan DANA tracking info
         db.query(
-          'UPDATE driver_withdrawals SET transaction_id = ? WHERE id = ?',
-          [result.partnerReferenceNo, id]
+          `UPDATE driver_withdrawals 
+           SET partner_reference_no = ?, 
+               dana_disbursement_id = ?,
+               dana_status = ?
+           WHERE id = ?`,
+          [result.partnerReferenceNo, result.disbursementId, result.status, id]
         );
       } else {
         console.error(`❌ DANA disbursement failed for withdrawal ${id}:`, result.error);
         // Rollback to pending if DANA call fails
         db.query(
-          'UPDATE driver_withdrawals SET status = "pending", processed_at = NULL WHERE id = ?',
-          [id]
+          `UPDATE driver_withdrawals 
+           SET status = "pending", 
+               processed_at = NULL,
+               dana_failure_reason = ?
+           WHERE id = ?`,
+          [result.error, id]
         );
       }
     }).catch(error => {
