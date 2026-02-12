@@ -227,7 +227,8 @@ router.post('/login', async (req, res) => {
     const [users] = await db.query(
       `SELECT u.id, u.phone, u.username, u.password, u.is_active, u.user_type,
               d.id as driver_id, d.email, d.full_name, d.vehicle_type, d.vehicle_plate,
-              d.rating, d.total_trips, d.status, d.is_verified
+              d.rating, d.total_trips, d.status, d.is_verified,
+              d.bank_name, d.bank_account_number, d.bank_account_holder
        FROM users u
        LEFT JOIN independent_drivers d ON u.id = d.user_id
        WHERE u.phone = ? AND u.user_type = 'driver'`,
@@ -276,7 +277,10 @@ router.post('/login', async (req, res) => {
         rating: user.rating || '5.0',
         totalTrips: user.total_trips || 0,
         isVerified: user.is_verified || 0,
-        status: user.status || 'pending'
+        status: user.status || 'pending',
+        bankName: user.bank_name,
+        bankAccountNumber: user.bank_account_number,
+        bankAccountHolder: user.bank_account_holder
       }
     });
 
