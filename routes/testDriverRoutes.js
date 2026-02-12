@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
-const bcrypt = require('bcryptjs');
 
 /**
  * POST /api/test/create-test-driver
@@ -11,20 +10,16 @@ const bcrypt = require('bcryptjs');
  */
 router.post('/create-test-driver', async (req, res) => {
   try {
-    // Hash password
-    const hashedPassword = await bcrypt.hash('password123', 10);
-
-    // Insert test driver
+    // Insert test driver (without password - independent_drivers might not have password column)
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
-        email, password, full_name, phone_number,
+        email, full_name, phone_number,
         vehicle_type, vehicle_plate, vehicle_model,
         bank_name, bank_account_number, bank_account_holder,
         total_earnings, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         `driver.test.${Date.now()}@example.com`,
-        hashedPassword,
         'Budi Santoso Test',
         '081234567890',
         'motor',
@@ -54,7 +49,6 @@ router.post('/create-test-driver', async (req, res) => {
       data: {
         driver_id: driverId,
         email: driver[0].email,
-        password: 'password123',
         full_name: driver[0].full_name,
         bank_name: driver[0].bank_name,
         bank_account_number: driver[0].bank_account_number,
