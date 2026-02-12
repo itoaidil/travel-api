@@ -10,26 +10,36 @@ const db = require('../config/database');
  */
 router.post('/create-test-driver', async (req, res) => {
   try {
-    // Insert test driver (without password - independent_drivers might not have password column)
+    // First, create user account
+    const [userResult] = await db.query(
+      `INSERT INTO users (email, role) VALUES (?, 'driver')`,
+      [`driver.test.${Date.now()}@example.com`]
+    );
+
+    const userId = userResult.insertId;
+
+    // Then create independent driver
     const [result] = await db.query(
       `INSERT INTO independent_drivers (
-        email, full_name, phone_number,
-        vehicle_type, vehicle_plate, vehicle_model,
+        user_id, full_name, phone, email,
+        vehicle_type, vehicle_plate, license_number,
         bank_name, bank_account_number, bank_account_holder,
-        total_earnings, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        total_earnings, status, is_verified
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        `driver.test.${Date.now()}@example.com`,
+        userId,
         'Budi Santoso Test',
         '081234567890',
-        'motor',
-        'B1234TEST',
-        'Honda Beat',
+        `driver.test.${userId}@example.com`,
+        'motorcycle',
+        `B${userId}TEST`,
+        `LIC${userId}`,
         'BCA',
         '1234567890',
         'Budi Santoso',
         500000, // Total earnings Rp 500k
-        'approved'
+        'active',
+        true
       ]
     );
 
