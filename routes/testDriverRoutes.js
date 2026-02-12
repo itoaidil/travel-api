@@ -13,10 +13,11 @@ router.post('/create-test-driver', async (req, res) => {
     // First, create user account
     const timestamp = Date.now();
     const email = `driver.test.${timestamp}@example.com`;
+    const username = `testdriver${timestamp}`;
     
     const [userResult] = await db.query(
-      `INSERT INTO users (email, role) VALUES (?, 'driver')`,
-      [email]
+      `INSERT INTO users (username, email, password, user_type) VALUES (?, ?, ?, ?)`,
+      [username, email, 'dummy_password_hash', 'driver']
     );
 
     const userId = userResult.insertId;
