@@ -173,4 +173,144 @@ router.get('/history/:driver_id', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/driver-location/status/:driver_id
+ * Check if driver is online/active (heartbeat status)
+ */
+router.get('/status/:driver_id', async (req, res) => {
+  const { driver_id } = req.params;
+  const { timeout_minutes = 15 } = req.query; // Driver offline if no heartbeat in X minutes
+
+  try {
+    const [locations] = await db.query(
+      `SELECT 
+        dl.driver_id,
+        dl.is_active,
+        dl.latitude,
+        dl.longitude,
+        dl.created_at,
+        d.full_name,
+        d.status as driver_status,
+        TIMESTAMPDIFF(MINUTE, dl.created_at, NOW()) as minutes_since_update
+       FROM driver_locations dl
+       JOIN independent_drivers d ON dl.driver_id = d.id
+       WHERE dl.driver_id = ?
+       ORDER BY dl.created_at DESC
+       LIMIT 1`,
+      [driver_id]
+    );
+
+    if (locations.length === 0) {
+      // No location data, check driver exists
+      const [drivers] = await db.query(
+        'SELECT id, full_name, status FROM independent_drivers WHERE id = ?',
+        [driver_id]
+      );
+
+      if (drivers.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Driver not found'
+        });
+      }
+
+      return res.json({
+        success: true,
+        driver_id: driver_id,
+        driver_name: drivers[0].full_name,
+        driver_status: drivers[0].status,
+        online: false,
+        reason: 'No location data sent',
+        last_heartbeat: null
+      });
+    }
+
+    const location = locations[0];
+    const timeout = parseInt(timeout_minutes);
+    const minutes_since = location.minutes_since_update;
+    const is_online = minutes_since < timeout && location.is_active === 1;
+
+    return res.json({
+      success: true,
+      driver_id: driver_id,
+      driver_name: location.full_name,
+      driver_status: location.driver_status,
+      online: is_online,
+      is_active: location.is_active === 1,
+      last_heartbeat: location.created_at,
+      minutes_since_update: minutes_since,
+      timeout_minutes: timeout,
+      last_location: {
+        latitude: location.latitude,
+        longitude: location.longitude
+      }
+    });
+
+  } catch (error) {
+    console.error('Error checking driver status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error checking status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/driver-location/status/all
+ * Check status of all drivers (online/offline)
+ */
+router.get('/status-all', async (req, res) => {
+  const { timeout_minutes = 15 } = req.query;
+
+  try {
+    const timeout = parseInt(timeout_minutes);
+
+    const [drivers] = await db.query(
+      `SELECT 
+        d.id,
+        d.full_name,
+        d.status,
+        COALESCE(dl.is_active, 0) as is_active,
+        dl.created_at as last_heartbeat,
+        COALESCE(TIMESTAMPDIFF(MINUTE, dl.created_at, NOW()), -1) as minutes_since_update,
+        dl.latitude,
+        dl.longitude
+       FROM independent_drivers d
+       LEFT JOIN driver_locations dl ON d.id = dl.driver_id
+       AND dl.created_at = (
+         SELECT MAX(created_at) FROM driver_locations WHERE driver_id = d.id
+       )
+       ORDER BY d.id DESC`
+    );
+
+    const driverStatus = drivers.map(driver => ({
+      driver_id: driver.id,
+      name: driver.full_name,
+      status: driver.status,
+      online: driver.is_active === 1 && (driver.minutes_since_update === -1 || driver.minutes_since_update < timeout),
+      last_heartbeat: driver.last_heartbeat,
+      minutes_since_update: driver.minutes_since_update === -1 ? 'never' : driver.minutes_since_update,
+      last_location: driver.latitude ? { lat: driver.latitude, lng: driver.longitude } : null
+    }));
+
+    return res.json({
+      success: true,
+      total_drivers: driverStatus.length,
+      online_count: driverStatus.filter(d => d.online).length,
+      offline_count: driverStatus.filter(d => !d.online).length,
+      timeout_minutes: timeout,
+      drivers: driverStatus
+    });
+
+  } catch (error) {
+    console.error('Error checking all drivers status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error checking drivers status',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
