@@ -15,10 +15,11 @@ router.post('/create-test-driver', async (req, res) => {
     const timestamp = Date.now();
     const email = `driver.test.${timestamp}@example.com`;
     const username = `testdriver${timestamp}`;
+    const phone = `08${timestamp.toString().slice(-9)}`; // Generate unique phone number
     
     const [userResult] = await db.query(
-      `INSERT INTO users (username, email, password, user_type) VALUES (?, ?, ?, ?)`,
-      [username, email, 'dummy_password_hash', 'driver']
+      `INSERT INTO users (username, email, phone, password, user_type, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
+      [username, email, phone, 'dummy_password_hash', 'driver', 1]
     );
 
     const userId = userResult.insertId;
@@ -41,7 +42,7 @@ router.post('/create-test-driver', async (req, res) => {
       [
         userId,
         'Budi Santoso Test',
-        '081234567890',
+        phone,
         email,
         'motorcycle',  // Must match enum: bike, motorcycle, car, truck
         `B${userId}TEST`,
@@ -70,14 +71,14 @@ router.post('/create-test-driver', async (req, res) => {
       message: 'Test driver created successfully',
       data: {
         driver_id: driverId,
-        phone: '081234567890',
+        phone: phone,
         password: 'TestDriver123!',
         email: driver[0].email,
         full_name: driver[0].full_name,
         bank_name: driver[0].bank_name,
         bank_account_number: driver[0].bank_account_number,
         total_earnings: driver[0].total_earnings,
-        test_command: `./test_withdrawal_with_driver_id.sh ${driverId}`
+        login_url: `https://travel-api-production-23ae.up.railway.app/api/driver-auth/login (POST with phone and password)`
       }
     });
 
