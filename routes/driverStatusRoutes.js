@@ -142,6 +142,9 @@ router.get('/profile', async (req, res) => {
         rating,
         total_trips,
         total_earnings,
+        bank_name,
+        bank_account_number,
+        bank_account_holder,
         created_at,
         last_online_at
        FROM independent_drivers 
