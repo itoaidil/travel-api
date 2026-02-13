@@ -120,4 +120,57 @@ router.delete('/cleanup-test-drivers', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/test/update-driver-bank/:driver_id
+ * Update driver bank information
+ */
+router.patch('/update-driver-bank/:driver_id', async (req, res) => {
+  try {
+    const { driver_id } = req.params;
+    const { bank_name, bank_account_number, bank_account_holder } = req.body;
+
+    if (!bank_name || !bank_account_number || !bank_account_holder) {
+      return res.status(400).json({
+        success: false,
+        message: 'bank_name, bank_account_number, and bank_account_holder are required'
+      });
+    }
+
+    const db_instance = req.db;
+
+    const [result] = await db_instance.query(
+      `UPDATE independent_drivers 
+       SET bank_name = ?, bank_account_number = ?, bank_account_holder = ?
+       WHERE id = ?`,
+      [bank_name, bank_account_number, bank_account_holder, driver_id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    const [driver] = await db_instance.query(
+      'SELECT id, bank_name, bank_account_number, bank_account_holder FROM independent_drivers WHERE id = ?',
+      [driver_id]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Driver bank info updated',
+      data: driver[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating driver bank info:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update driver bank info',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
