@@ -145,8 +145,7 @@ router.get('/profile', async (req, res) => {
         bank_name,
         bank_account_number,
         bank_account_holder,
-        created_at,
-        last_online_at
+        created_at
        FROM independent_drivers 
        WHERE id = ?`,
       [driver_id]
