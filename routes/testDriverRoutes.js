@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const bcrypt = require('bcrypt');
 
 /**
  * POST /api/test/create-test-driver
@@ -21,6 +22,13 @@ router.post('/create-test-driver', async (req, res) => {
     );
 
     const userId = userResult.insertId;
+
+    // Update user password to valid hash
+    const hashedPassword = await bcrypt.hash('TestDriver123!', 10);
+    await db.query(
+      'UPDATE users SET password = ? WHERE id = ?',
+      [hashedPassword, userId]
+    );
 
     // Then create independent driver with correct schema
     const [result] = await db.query(
@@ -62,6 +70,8 @@ router.post('/create-test-driver', async (req, res) => {
       message: 'Test driver created successfully',
       data: {
         driver_id: driverId,
+        phone: '081234567890',
+        password: 'TestDriver123!',
         email: driver[0].email,
         full_name: driver[0].full_name,
         bank_name: driver[0].bank_name,
