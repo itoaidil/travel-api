@@ -233,7 +233,6 @@ router.get('/bookings/:customer_id', async (req, res) => {
         b.customer_id,
         b.student_id,
         b.booking_status,
-        b.status,
         b.pickup_lat,
         b.pickup_lng,
         b.pickup_location,
