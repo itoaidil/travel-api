@@ -211,7 +211,8 @@ router.post('/login', async (req, res) => {
 
 /**
  * GET /api/customer/bookings/:customer_id
- * Get all bookings for a customer with tracking coordinates
+ * Get all transaction history for a customer from independent_bookings
+ * Shows: ride, delivery, cargo, food bookings - organized by booking_type
  */
 router.get('/bookings/:customer_id', async (req, res) => {
   const db = req.db;
@@ -228,37 +229,36 @@ router.get('/bookings/:customer_id', async (req, res) => {
 
     const query = `
       SELECT 
-        b.id,
-        b.travel_id,
-        b.customer_id,
-        b.student_id,
-        b.booking_status,
-        b.pickup_lat,
-        b.pickup_lng,
-        b.pickup_location,
-        b.pickup_address,
-        b.dropoff_lat,
-        b.dropoff_lng,
-        b.dropoff_location,
-        b.dropoff_address,
-        b.booking_date,
-        b.total_price,
-        t.origin,
-        t.destination,
-        t.departure_date,
-        t.departure_time,
-        v.vehicle_number,
-        v.vehicle_type,
-        p.po_name,
-        GROUP_CONCAT(bs.seat_number ORDER BY bs.seat_number) as seats
-      FROM bookings b
-      LEFT JOIN travels t ON b.travel_id = t.id
-      LEFT JOIN vehicles v ON t.vehicle_id = v.id
-      LEFT JOIN pos p ON v.po_id = p.id
-      LEFT JOIN booking_seats bs ON b.id = bs.booking_id
-      WHERE b.customer_id = ?
-      GROUP BY b.id
-      ORDER BY b.booking_date DESC
+        id,
+        booking_code,
+        booking_type,
+        customer_id,
+        customer_name,
+        driver_id,
+        driver_name,
+        pickup_lat,
+        pickup_lng,
+        pickup_location,
+        pickup_address,
+        dropoff_lat,
+        dropoff_lng,
+        dropoff_location,
+        dropoff_address,
+        distance_km,
+        total_price,
+        driver_earnings,
+        booking_status,
+        payment_status,
+        payment_method,
+        created_at,
+        completed_at,
+        customer_rating,
+        vehicle_type,
+        item_type,
+        item_size
+      FROM independent_bookings
+      WHERE customer_id = ?
+      ORDER BY created_at DESC
     `;
 
     const [bookings] = await db.query(query, [customerId]);
