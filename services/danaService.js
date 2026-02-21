@@ -80,22 +80,25 @@ async function createDisbursement(withdrawalData) {
       `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
     ).toString('base64');
 
-    // DANA API endpoint - try multiple formats
-    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
+    // DANA API endpoint - use correct endpoint path from GitHub docs
+    // https://github.com/dana-id/dana-node/docs/disbursement/v1/Apis/DisbursementApi.md
+    let baseUrl = process.env.DANA_BASE_URL || 'http://api.sandbox.dana.id'; // NOTE: http not https for sandbox!
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
-    // Try disbursements endpoint, fallback to transfer-to-bank
+    // Correct DANA endpoints from official docs:
+    // - POST /v1.0/emoney/transfer-bank.htm  (for transfer)
+    // - POST /v1.0/emoney/transfer-bank-status.htm (for status)
     const endpoints = [
-      `${baseUrl}/v1/disbursements`,
-      `${baseUrl}/v1/transfer-to-bank/transfer`,
-      `${baseUrl}/transfer-to-bank`,
-      `${baseUrl}/disbursements`
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // Official endpoint (correct)
+      `${baseUrl}/v1/emoney/transfer-bank.htm`,       // Alternative
+      `${baseUrl}/v1.0/emoney/transfer-to-bank.htm`,  // Alternative naming
+      `${baseUrl}/v1/disbursements`                   // Legacy (from prev attempt)
     ];
 
     let response = null;
     let lastError = null;
 
-    console.log(`💸 Trying DANA disbursement with ${endpoints.length} endpoint variants...`);
+    console.log(`💸 Trying DANA transfer-to-bank with ${endpoints.length} endpoint variants...`);
     console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
 
     // Try each endpoint until one works
@@ -179,28 +182,58 @@ async function checkDisbursementStatus(partnerReferenceNo) {
       `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
     ).toString('base64');
 
-    // DANA API endpoint
-    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
+    // DANA API endpoint for status check
+    // https://github.com/dana-id/dana-node - POST /v1.0/emoney/transfer-bank-status.htm
+    let baseUrl = process.env.DANA_BASE_URL || 'http://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, '');
     
-    const endpoint = `${baseUrl}/v1/disbursements/${partnerReferenceNo}`;
+    const endpoints = [
+      `${baseUrl}/v1.0/emoney/transfer-bank-status.htm`,  // Official endpoint
+      `${baseUrl}/v1/emoney/transfer-bank-status.htm`,    // Alternative
+      `${baseUrl}/v1/disbursements/${partnerReferenceNo}` // Legacy
+    ];
 
-    const response = await axios.get(
-      endpoint,
-      {
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
-          'Content-Type': 'application/json'
-        }
+    let response = null;
+    let lastError = null;
+
+    console.log(`🔄 Checking status with ${endpoints.length} endpoint variants...`);
+
+    // Try each endpoint
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔄 Trying endpoint: ${endpoint}`);
+        
+        response = await axios.post(
+          endpoint,
+          { partnerReferenceNo: partnerReferenceNo },
+          {
+            headers: {
+              'Authorization': `Basic ${credentials}`,
+              'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
+              'Content-Type': 'application/json'
+            },
+            timeout: 15000
+          }
+        );
+
+        console.log(`✅ Success with endpoint: ${endpoint}`);
+        break;
+        
+      } catch (err) {
+        lastError = err;
+        console.warn(`⚠️  Endpoint ${endpoint} failed: HTTP ${err.response?.status}`);
       }
-    );
+    }
+
+    if (!response) {
+      throw lastError;
+    }
 
     console.log('✅ DANA status retrieved successfully');
 
     return {
       success: true,
-      status: response.data.status || response.data.disbursementStatus,
+      status: response.data.status || response.data.disbursementStatus || response.data.transferStatus,
       data: response.data
     };
 
