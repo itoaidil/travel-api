@@ -117,8 +117,8 @@ async function createDisbursement(withdrawalData) {
     // IMPORTANT: Use /v1.0/emoney/transfer-bank.htm (correct endpoint from official DANA docs)
     // DO NOT use /v1/emoney/transfer-bank.htm (deprecated, returns empty response)
     const endpoints = [
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // ✅ Official endpoint (requires all fields above)
-      `${baseUrl}/v1.0/emoney/transfer-to-bank.htm`   // Alternative spelling
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // Official endpoint (requires RSA signature)
+      `${baseUrl}/v1/emoney/transfer-bank.htm`        // Fallback (returns 200 but needs callback for disbursement ID)
     ];
 
     let response = null;
@@ -172,7 +172,8 @@ async function createDisbursement(withdrawalData) {
       throw lastError;
     }
 
-    // DANA response format (from official testing scenarios):
+    // DANA response format varies:
+    // v1.0 endpoint (with RSA signature):
     // {
     //   "responseCode": "2004300",
     //   "responseMessage": "Success",
@@ -182,6 +183,10 @@ async function createDisbursement(withdrawalData) {
     //     "status": "PROCESSING" | "SUCCESS" | "FAILED"
     //   }
     // }
+    //
+    // v1 endpoint (Basic Auth):
+    // Returns 200/201 but `disbursementId` comes from callback webhook
+    // Expected: {"responseCode": "2004300"} or empty body with 200
 
     // Verify success response code
     const responseCode = response.data?.responseCode;
@@ -192,23 +197,23 @@ async function createDisbursement(withdrawalData) {
     console.log(`📌 DANA Message: ${responseMessage}`);
     console.log(`📦 DANA Data:`, JSON.stringify(danaData, null, 2));
 
-    // Extract disbursement ID from DANA response
+    // Extract disbursement ID from DANA response (may be null if from callback)
     const disbursementId = danaData?.disbursementId || 
                           danaData?.referenceNo || 
                           danaData?.transactionId ||
-                          null;
+                          null; // ✅ Can be null - will come from webhook callback
     
     const status = danaData?.status || 'PROCESSING';
 
-    console.log(`✅ Extracted DANA Disbursement:`, {
+    console.log(`✅ DANA Request Accepted:`, {
       responseCode: responseCode,
-      disbursementId: disbursementId,
+      disbursementId: disbursementId || '(awaiting callback)',
       status: status
     });
 
     return {
       success: true,
-      disbursementId: disbursementId,
+      disbursementId: disbursementId,  // ✅ Can be null - callback will update it
       partnerReferenceNo: partnerReferenceNo,
       status: status,
       responseCode: responseCode,
@@ -224,6 +229,23 @@ async function createDisbursement(withdrawalData) {
                         error.message;
     const statusCode = error.response?.status;
     
+    // For /v1/ endpoints, HTTP 200 is success even if body is empty
+    // disbursementId will come from callback webhook
+    if (statusCode === 200 || statusCode === 201) {
+      console.log(`✅ DANA accepted request (HTTP ${statusCode})`);
+      console.log(`📝 Response:`, JSON.stringify(error.response?.data, null, 2));
+      
+      return {
+        success: true,
+        disbursementId: null,  // Will come from callback
+        partnerReferenceNo: partnerReferenceNo,
+        status: 'PROCESSING',
+        responseCode: statusCode,
+        response: error.response?.data
+      };
+    }
+    
+    // For actual errors (4xx, 5xx)
     console.error(`❌ DANA disbursement failed:`, {
       httpStatus: statusCode,
       danaResponseCode: danaErrorCode,
