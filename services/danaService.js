@@ -15,19 +15,65 @@ async function getDanaAccessToken() {
       `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
     ).toString('base64');
 
-    const response = await axios.post(
-      `${process.env.DANA_BASE_URL}/v1/oauth/token`,
-      'grant_type=client_credentials',
-      {
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
+    // Use DANA_BASE_URL from Railway environment variable
+    if (!process.env.DANA_BASE_URL) {
+      throw new Error('DANA_BASE_URL not configured in environment variables');
+    }
 
-    return response.data.access_token;
+    let baseUrl = process.env.DANA_BASE_URL;
+    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
+    
+    // Try different OAuth endpoint paths
+    const tokenEndpoints = [
+      `${baseUrl}/v1/oauth/token`,              // Standard
+      `${baseUrl}/oauth/token`,                 // Without /v1
+      `${baseUrl}/v1/auth/token`,               // Alternative name
+      `${baseUrl}/v1/authorize/token`           // Another alternative
+    ];
+
+    let lastError = null;
+    let tokenResponse = null;
+
+    // Try each endpoint until one works
+    for (const endpoint of tokenEndpoints) {
+      try {
+        console.log(`🔐 Attempting DANA OAuth at: ${endpoint}`);
+
+        tokenResponse = await axios.post(
+          endpoint,
+          'grant_type=client_credentials',
+          {
+            headers: {
+              'Authorization': `Basic ${credentials}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            timeout: 5000
+          }
+        );
+
+        // Success! Log which endpoint worked
+        console.log(`✅ DANA OAuth successful via: ${endpoint}`);
+        return tokenResponse.data.access_token;
+
+      } catch (error) {
+        lastError = error;
+        const statusCode = error.response?.status;
+        console.log(`   ${statusCode === 404 ? '❌' : '⚠️ '} ${endpoint} - HTTP ${statusCode}`);
+        // Continue to next endpoint
+      }
+    }
+
+    // If all endpoints failed, throw the last error
+    if (lastError) {
+      console.error('❌ All DANA OAuth endpoints failed. Tried:', tokenEndpoints);
+      throw lastError;
+    }
+
   } catch (error) {
+    console.error('❌ Failed to get DANA access token:', error.response?.data || error.message);
+    throw new Error('Failed to authenticate with DANA');
+  }
+}
     console.error('❌ Failed to get DANA access token:', error.response?.data || error.message);
     throw new Error('Failed to authenticate with DANA');
   }
@@ -123,9 +169,19 @@ async function createDisbursement(withdrawalData) {
     // Generate signature
     const signature = generateSignature(payload, timestamp);
 
+    // Construct DANA Disbursement endpoint using Railway BASE_URL
+    let baseUrl = process.env.DANA_BASE_URL;
+    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
+    
+    const disbursementEndpoint = baseUrl.includes('/v1')
+      ? `${baseUrl}/transfer-to-bank/transfer`
+      : `${baseUrl}/v1/transfer-to-bank/transfer`;
+
+    console.log(`💸 Calling DANA transfer endpoint: ${disbursementEndpoint}`);
+
     // Call DANA Disbursement API
     const response = await axios.post(
-      `${process.env.DANA_BASE_URL}/v1/transfer-to-bank/transfer`,
+      disbursementEndpoint,
       payload,
       {
         headers: {
@@ -134,7 +190,8 @@ async function createDisbursement(withdrawalData) {
           'X-DANA-Timestamp': timestamp,
           'X-DANA-Signature': signature,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000
       }
     );
 
@@ -169,8 +226,16 @@ async function checkDisbursementStatus(partnerReferenceNo) {
     const accessToken = await getDanaAccessToken();
     const timestamp = new Date().toISOString();
 
+    // Construct DANA status endpoint using Railway BASE_URL
+    let baseUrl = process.env.DANA_BASE_URL;
+    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
+    
+    const statusEndpoint = baseUrl.includes('/v1')
+      ? `${baseUrl}/transfer-to-bank/status`
+      : `${baseUrl}/v1/transfer-to-bank/status`;
+
     const response = await axios.get(
-      `${process.env.DANA_BASE_URL}/v1/transfer-to-bank/status`,
+      statusEndpoint,
       {
         params: {
           partnerReferenceNo: partnerReferenceNo

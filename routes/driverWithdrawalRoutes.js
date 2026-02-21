@@ -113,11 +113,11 @@ router.post('/request', async (req, res) => {
       });
     }
 
-    // Create withdrawal request
+    // Create withdrawal request with status 'processing' (will auto-trigger DANA)
     const [result] = await db.query(
       `INSERT INTO driver_withdrawals 
-       (driver_id, withdrawal_amount, bank_name, bank_account_number, bank_account_holder, status, requested_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', NOW())`,
+       (driver_id, withdrawal_amount, bank_name, bank_account_number, bank_account_holder, status, requested_at, processed_at)
+       VALUES (?, ?, ?, ?, ?, 'processing', NOW(), NOW())`,
       [driver_id, withdrawal_amount, finalBankName, finalAccountNumber, finalAccountHolder]
     );
 
@@ -129,11 +129,50 @@ router.post('/request', async (req, res) => {
       [withdrawalId]
     );
 
-    console.log(`✅ Withdrawal request created - Driver ${driver_id}, Amount: ${withdrawal_amount}`);
+    console.log(`✅ Withdrawal request created - Driver ${driver_id}, Amount: ${withdrawal_amount} - Auto-triggering DANA transfer...`);
+
+    // ===== AUTO-TRIGGER DANA API (No admin manual approval needed) =====
+    danaService.createDisbursement({
+      id: withdrawalId,
+      driver_id: driver_id,
+      amount: withdrawal_amount,
+      bank_name: finalBankName,
+      bank_account_number: finalAccountNumber,
+      bank_account_holder: finalAccountHolder
+    }).then(result => {
+      if (result.success) {
+        console.log(`✅ DANA transfer initiated for withdrawal ${withdrawalId}`);
+        // Update dengan DANA tracking info
+        db.query(
+          `UPDATE driver_withdrawals 
+           SET partner_reference_no = ?, 
+               dana_disbursement_id = ?,
+               dana_status = ?
+           WHERE id = ?`,
+          [result.partnerReferenceNo, result.disbursementId, result.status, withdrawalId]
+        );
+      } else {
+        console.error(`❌ DANA transfer failed for withdrawal ${withdrawalId}:`, result.error);
+        // If DANA fails, store error but keep as processing (can retry later)
+        db.query(
+          `UPDATE driver_withdrawals 
+           SET dana_failure_reason = ?,
+               dana_status = 'FAILED_INITIAL'
+           WHERE id = ?`,
+          [result.error, withdrawalId]
+        );
+      }
+    }).catch(error => {
+      console.error(`❌ DANA error for withdrawal ${withdrawalId}:`, error.message);
+      db.query(
+        'UPDATE driver_withdrawals SET dana_failure_reason = ? WHERE id = ?',
+        [error.message, withdrawalId]
+      );
+    });
 
     return res.json({
       success: true,
-      message: 'Withdrawal request submitted successfully',
+      message: 'Withdrawal request submitted successfully - DANA transfer in progress',
       data: newWithdrawal[0]
     });
 
@@ -470,22 +509,23 @@ router.post('/admin/:id/approve', async (req, res) => {
           [result.partnerReferenceNo, result.disbursementId, result.status, id]
         );
       } else {
-        console.error(`❌ DANA disbursement failed for withdrawal ${id}:`, result.error);
-        // Rollback to pending if DANA call fails
+        console.error(`❌ DANA disbursement initial call failed for withdrawal ${id}:`, result.error);
+        // Keep status as processing - DANA may retry or be manually completed
+        // Store failure reason for debugging
         db.query(
           `UPDATE driver_withdrawals 
-           SET status = "pending", 
-               processed_at = NULL,
-               dana_failure_reason = ?
+           SET dana_failure_reason = ?,
+               dana_status = 'FAILED_INITIAL'
            WHERE id = ?`,
           [result.error, id]
         );
       }
     }).catch(error => {
-      console.error(`❌ DANA disbursement error for withdrawal ${id}:`, error);
+      console.error(`❌ DANA disbursement error for withdrawal ${id}:`, error.message);
+      // Keep processing status - allow manual intervention
       db.query(
-        'UPDATE driver_withdrawals SET status = "pending", processed_at = NULL WHERE id = ?',
-        [id]
+        'UPDATE driver_withdrawals SET dana_failure_reason = ? WHERE id = ?',
+        [error.message, id]
       );
     });
 
