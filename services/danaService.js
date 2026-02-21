@@ -120,12 +120,23 @@ async function createDisbursement(withdrawalData) {
         );
 
         console.log(`✅ Success with endpoint: ${endpoint}`);
-        console.log(`📝 DANA Response:`, JSON.stringify(response.data, null, 2));
+        console.log(`📝 DANA Response Status: ${response.status}`);
+        console.log(`📝 DANA Response Headers:`, {
+          'content-type': response.headers['content-type'],
+          'x-dana-signature': response.headers['x-dana-signature'] ? '***' : 'none'
+        });
+        console.log(`📝 DANA Response Data:`, JSON.stringify(response.data, null, 2));
+        console.log(`📝 Response Keys:`, Object.keys(response.data || {}));
         break; // Success! Stop trying other endpoints
         
       } catch (err) {
         lastError = err;
         console.warn(`⚠️  Endpoint ${endpoint} failed: HTTP ${err.response?.status}`);
+        console.warn(`⚠️  Error Response:`, {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: JSON.stringify(err.response?.data, null, 2)
+        });
         // Continue to next endpoint
       }
     }
@@ -135,11 +146,26 @@ async function createDisbursement(withdrawalData) {
       throw lastError;
     }
 
+    // Extract disbursement ID from response (check multiple possible field names)
+    const disbursementId = response.data?.disbursementId || 
+                          response.data?.referenceNo || 
+                          response.data?.transactionId ||
+                          response.data?.partnerReferenceNo ||
+                          null;
+    
+    const status = response.data?.status || response.data?.disbursementStatus || 'PROCESSING';
+
+    console.log(`🔍 Extracted from DANA response:`, {
+      disbursementId: disbursementId,
+      status: status,
+      rawResponse: response.data
+    });
+
     return {
       success: true,
-      disbursementId: response.data.disbursementId || response.data.referenceNo,
+      disbursementId: disbursementId,
       partnerReferenceNo: partnerReferenceNo,
-      status: response.data.status || 'PROCESSING',
+      status: status,
       response: response.data
     };
 
