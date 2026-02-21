@@ -198,10 +198,10 @@ async function createDisbursement(withdrawalData) {
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
     
     const disbursementEndpoint = baseUrl.includes('/v1')
-      ? `${baseUrl}/transfer-to-bank/transfer`
-      : `${baseUrl}/v1/transfer-to-bank/transfer`;
+      ? `${baseUrl}/disbursements`
+      : `${baseUrl}/v1/disbursements`;
 
-    console.log(`💸 Calling DANA transfer endpoint: ${disbursementEndpoint}`);
+    console.log(`💸 Calling DANA disbursement endpoint: ${disbursementEndpoint}`);
 
     // Call DANA Disbursement API with Basic Auth + RSA Signature
     const response = await axios.post(
@@ -259,8 +259,8 @@ async function checkDisbursementStatus(partnerReferenceNo) {
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
     
     const statusEndpoint = baseUrl.includes('/v1')
-      ? `${baseUrl}/transfer-to-bank/status`
-      : `${baseUrl}/v1/transfer-to-bank/status`;
+      ? `${baseUrl}/disbursements/status`
+      : `${baseUrl}/v1/disbursements/status`;
 
     const response = await axios.get(
       statusEndpoint,
