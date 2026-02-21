@@ -1,42 +1,10 @@
 /**
  * DANA Disbursement Service
- * Handles communication with DANA API for bank transfers using official dana-node library
+ * Handles communication with DANA API for bank transfers
+ * Using manual HTTP approach (no external compilation required)
  */
 
-const DanaClient = require('dana-node');
-
-// Initialize DANA client with credentials from environment
-let danaClient = null;
-
-function initializeDanaClient() {
-  if (danaClient) {
-    return danaClient;
-  }
-
-  try {
-    // Format private key with proper PEM markers if not already formatted
-    let privateKey = process.env.DANA_PRIVATE_KEY || process.env.PRIVATE_KEY;
-    if (privateKey && !privateKey.includes('BEGIN PRIVATE KEY')) {
-      privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
-    }
-
-    // Initialize DANA client
-    danaClient = new DanaClient({
-      env: process.env.DANA_ENV || process.env.ENV || 'sandbox',
-      clientId: process.env.DANA_CLIENT_ID || process.env.X_PARTNER_ID,
-      clientSecret: process.env.DANA_CLIENT_SECRET,
-      merchantId: process.env.DANA_MERCHANT_ID,
-      privateKey: privateKey,
-      publicKey: process.env.DANA_PUBLIC_KEY
-    });
-
-    console.log('✅ DANA client initialized successfully');
-    return danaClient;
-  } catch (error) {
-    console.error('❌ Failed to initialize DANA client:', error.message);
-    throw error;
-  }
-}
+const axios = require('axios');
 
 /**
  * Map bank names to DANA bank codes
@@ -83,7 +51,7 @@ function getBankCode(bankName) {
 }
 
 /**
- * Create disbursement to bank account via DANA using official library
+ * Create disbursement to bank account via DANA
  * @param {Object} withdrawalData - Withdrawal information
  * @returns {Promise<Object>} DANA disbursement response
  */
@@ -91,14 +59,11 @@ async function createDisbursement(withdrawalData) {
   try {
     console.log('🚀 Creating DANA disbursement for withdrawal:', withdrawalData.id);
 
-    // Initialize DANA client
-    const client = initializeDanaClient();
-
     // Generate unique reference number
     const partnerReferenceNo = `WD-${withdrawalData.id}-${Date.now()}`;
     
-    // Prepare disbursement request
-    const disbursementRequest = {
+    // Prepare disbursement payload
+    const payload = {
       partnerReferenceNo: partnerReferenceNo,
       amount: {
         value: withdrawalData.amount.toString(),
@@ -107,41 +72,63 @@ async function createDisbursement(withdrawalData) {
       beneficiaryAccountNo: withdrawalData.bank_account_number,
       beneficiaryAccountName: withdrawalData.bank_account_holder,
       beneficiaryBankCode: getBankCode(withdrawalData.bank_name),
-      description: `Withdrawal untuk Driver ${withdrawalData.driver_id}`,
-      additionalInfo: {
-        withdrawalId: withdrawalData.id.toString(),
-        driverId: withdrawalData.driver_id.toString()
-      }
+      description: `Withdrawal Driver ${withdrawalData.driver_id}`
     };
 
-    console.log('💸 Sending disbursement request to DANA...');
+    // Basic auth with Client ID and Secret
+    const credentials = Buffer.from(
+      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
+    ).toString('base64');
 
-    // Call DANA disbursement API using the official library
-    const response = await client.disbursement.create(disbursementRequest);
+    // DANA API endpoint
+    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
+    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
+    
+    const endpoint = `${baseUrl}/v1/disbursements`;
 
-    console.log('✅ DANA disbursement created:', response);
+    console.log(`💸 Calling DANA endpoint: ${endpoint}`);
+
+    // Call DANA Disbursement API
+    const response = await axios.post(
+      endpoint,
+      payload,
+      {
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
+
+    console.log('✅ DANA disbursement created successfully');
 
     return {
       success: true,
-      disbursementId: response.disbursementId || response.referenceNo || response.partnerReferenceNo,
+      disbursementId: response.data.disbursementId || response.data.referenceNo,
       partnerReferenceNo: partnerReferenceNo,
-      status: response.status || response.disbursementStatus || 'PROCESSING',
-      response: response
+      status: response.data.status || 'PROCESSING',
+      response: response.data
     };
 
   } catch (error) {
-    console.error('❌ DANA disbursement failed:', error.response?.data || error.message);
+    const errorMsg = error.response?.data?.message || error.response?.data?.responseMessage || error.message;
+    const statusCode = error.response?.status;
+    
+    console.error(`❌ DANA disbursement failed (HTTP ${statusCode}): ${errorMsg}`);
     
     return {
       success: false,
-      error: error.response?.data?.responseMessage || error.message,
-      errorCode: error.response?.data?.responseCode || error.code || 'UNKNOWN_ERROR'
+      error: errorMsg,
+      errorCode: error.response?.data?.code || statusCode || 'UNKNOWN_ERROR',
+      statusCode: statusCode
     };
   }
 }
 
 /**
- * Check disbursement status from DANA using official library
+ * Check disbursement status from DANA
  * @param {string} partnerReferenceNo - Partner reference number
  * @returns {Promise<Object>} Disbursement status
  */
@@ -149,26 +136,46 @@ async function checkDisbursementStatus(partnerReferenceNo) {
   try {
     console.log('🔍 Checking DANA disbursement status:', partnerReferenceNo);
 
-    // Initialize DANA client
-    const client = initializeDanaClient();
+    // Basic auth
+    const credentials = Buffer.from(
+      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
+    ).toString('base64');
 
-    // Query disbursement status
-    const response = await client.disbursement.getStatus(partnerReferenceNo);
+    // DANA API endpoint
+    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
+    baseUrl = baseUrl.replace(/\/$/, '');
+    
+    const endpoint = `${baseUrl}/v1/disbursements/${partnerReferenceNo}`;
 
-    console.log('✅ DANA status retrieved:', response);
+    const response = await axios.get(
+      endpoint,
+      {
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ DANA status retrieved successfully');
 
     return {
       success: true,
-      status: response.disbursementStatus || response.status,
-      data: response
+      status: response.data.status || response.data.disbursementStatus,
+      data: response.data
     };
 
   } catch (error) {
-    console.error('❌ Failed to check DANA status:', error.response?.data || error.message);
+    const errorMsg = error.response?.data?.message || error.message;
+    const statusCode = error.response?.status;
+    
+    console.error(`❌ Failed to check DANA status (HTTP ${statusCode}): ${errorMsg}`);
     
     return {
       success: false,
-      error: error.response?.data?.responseMessage || error.message
+      error: errorMsg,
+      statusCode: statusCode
     };
   }
 }
