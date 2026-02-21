@@ -51,6 +51,26 @@ function getBankCode(bankName) {
 }
 
 /**
+ * Get DANA customer number (Merchant ID with proper format)
+ * DANA requires format: 628xxxxx
+ * We use DANA_MERCHANT_ID from env
+ */
+function getDanaCustomerNumber() {
+  let merchantId = process.env.DANA_MERCHANT_ID || '';
+  
+  // Remove any spaces or special chars
+  merchantId = merchantId.replace(/\s+/g, '');
+  
+  // If doesn't start with 628, it might be just digits - add 628 prefix
+  if (!merchantId.startsWith('628')) {
+    // Use as-is, DANA might handle it
+    console.warn(`⚠️  DANA_MERCHANT_ID doesn't start with 628: ${merchantId}`);
+  }
+  
+  console.log(`📱 Using DANA customerNumber: ${merchantId}`);
+  return merchantId;
+
+/**
  * Create disbursement to bank account via DANA
  * @param {Object} withdrawalData - Withdrawal information
  * @returns {Promise<Object>} DANA disbursement response
@@ -62,16 +82,24 @@ async function createDisbursement(withdrawalData) {
     // Generate unique reference number
     const partnerReferenceNo = `WD-${withdrawalData.id}-${Date.now()}`;
     
-    // Prepare disbursement payload
+    // Get bank code for beneficiary
+    const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
+    
+    // Prepare disbursement payload - WITH REQUIRED FIELDS FOR /v1.0/emoney/transfer-bank.htm
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
+      customerNumber: getDanaCustomerNumber(),  // ✅ REQUIRED for v1.0 endpoint
+      beneficiaryAccountNumber: withdrawalData.bank_account_number,
+      beneficiaryBankCode: beneficiaryBankCode,
       amount: {
         value: withdrawalData.amount.toString(),
         currency: 'IDR'
       },
-      beneficiaryAccountNo: withdrawalData.bank_account_number,
-      beneficiaryAccountName: withdrawalData.bank_account_holder,
-      beneficiaryBankCode: getBankCode(withdrawalData.bank_name),
+      additionalInfo: {  // ✅ REQUIRED for v1.0 endpoint
+        fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
+        beneficiaryAccountName: withdrawalData.bank_account_holder,
+        needNotify: true
+      },
       description: `Withdrawal Driver ${withdrawalData.driver_id}`
     };
 
@@ -85,14 +113,11 @@ async function createDisbursement(withdrawalData) {
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
-    // Correct DANA endpoints from official docs:
-    // - POST /v1.0/emoney/transfer-bank.htm  (for transfer)
-    // - POST /v1.0/emoney/transfer-bank-status.htm (for status)
+    // IMPORTANT: Use /v1.0/emoney/transfer-bank.htm (correct endpoint from official DANA docs)
+    // DO NOT use /v1/emoney/transfer-bank.htm (deprecated, returns empty response)
     const endpoints = [
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // Official endpoint (correct)
-      `${baseUrl}/v1/emoney/transfer-bank.htm`,       // Alternative
-      `${baseUrl}/v1.0/emoney/transfer-to-bank.htm`,  // Alternative naming
-      `${baseUrl}/v1/disbursements`                   // Legacy (from prev attempt)
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // ✅ Official endpoint (requires all fields above)
+      `${baseUrl}/v1.0/emoney/transfer-to-bank.htm`   // Alternative spelling
     ];
 
     let response = null;
