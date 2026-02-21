@@ -80,32 +80,57 @@ async function createDisbursement(withdrawalData) {
       `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
     ).toString('base64');
 
-    // DANA API endpoint
+    // DANA API endpoint - try multiple formats
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
-    const endpoint = `${baseUrl}/v1/disbursements`;
+    // Try disbursements endpoint, fallback to transfer-to-bank
+    const endpoints = [
+      `${baseUrl}/v1/disbursements`,
+      `${baseUrl}/v1/transfer-to-bank/transfer`,
+      `${baseUrl}/transfer-to-bank`,
+      `${baseUrl}/disbursements`
+    ];
 
-    console.log(`💸 Calling DANA endpoint: ${endpoint}`);
-    console.log(`📋 Request Header: Authorization: Basic ${credentials.substring(0, 20)}...`);
+    let response = null;
+    let lastError = null;
+
+    console.log(`💸 Trying DANA disbursement with ${endpoints.length} endpoint variants...`);
     console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
 
-    // Call DANA Disbursement API
-    const response = await axios.post(
-      endpoint,
-      payload,
-      {
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
-          'Content-Type': 'application/json'
-        },
-        timeout: 15000
-      }
-    );
+    // Try each endpoint until one works
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔄 Trying endpoint: ${endpoint}`);
+        
+        response = await axios.post(
+          endpoint,
+          payload,
+          {
+            headers: {
+              'Authorization': `Basic ${credentials}`,
+              'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
+              'Content-Type': 'application/json'
+            },
+            timeout: 15000
+          }
+        );
 
-    console.log('✅ DANA disbursement created successfully');
-    console.log(`📝 DANA Response:`, JSON.stringify(response.data, null, 2));
+        console.log(`✅ Success with endpoint: ${endpoint}`);
+        console.log(`📝 DANA Response:`, JSON.stringify(response.data, null, 2));
+        break; // Success! Stop trying other endpoints
+        
+      } catch (err) {
+        lastError = err;
+        console.warn(`⚠️  Endpoint ${endpoint} failed: HTTP ${err.response?.status}`);
+        // Continue to next endpoint
+      }
+    }
+
+    // If all endpoints failed
+    if (!response) {
+      throw lastError;
+    }
 
     return {
       success: true,
