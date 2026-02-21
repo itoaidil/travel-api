@@ -69,6 +69,7 @@ function getDanaCustomerNumber() {
   
   console.log(`📱 Using DANA customerNumber: ${merchantId}`);
   return merchantId;
+}
 
 /**
  * Create disbursement to bank account via DANA
