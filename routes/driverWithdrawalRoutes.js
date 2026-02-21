@@ -312,7 +312,11 @@ router.get('/requests/:driver_id', async (req, res) => {
         rejection_reason,
         requested_at,
         processed_at,
-        completed_at
+        completed_at,
+        partner_reference_no,
+        dana_disbursement_id,
+        dana_status,
+        dana_failure_reason
       FROM driver_withdrawals
       WHERE driver_id = ?
     `;
