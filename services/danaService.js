@@ -82,7 +82,7 @@ async function createDisbursement(withdrawalData) {
 
     // DANA API endpoint - use correct endpoint path from GitHub docs
     // https://github.com/dana-id/dana-node/docs/disbursement/v1/Apis/DisbursementApi.md
-    let baseUrl = process.env.DANA_BASE_URL || 'http://api.sandbox.dana.id'; // NOTE: http not https for sandbox!
+    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
     // Correct DANA endpoints from official docs:
@@ -184,7 +184,7 @@ async function checkDisbursementStatus(partnerReferenceNo) {
 
     // DANA API endpoint for status check
     // https://github.com/dana-id/dana-node - POST /v1.0/emoney/transfer-bank-status.htm
-    let baseUrl = process.env.DANA_BASE_URL || 'http://api.sandbox.dana.id';
+    let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, '');
     
     const endpoints = [
