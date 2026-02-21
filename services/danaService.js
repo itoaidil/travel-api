@@ -87,6 +87,8 @@ async function createDisbursement(withdrawalData) {
     const endpoint = `${baseUrl}/v1/disbursements`;
 
     console.log(`💸 Calling DANA endpoint: ${endpoint}`);
+    console.log(`📋 Request Header: Authorization: Basic ${credentials.substring(0, 20)}...`);
+    console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
 
     // Call DANA Disbursement API
     const response = await axios.post(
@@ -103,6 +105,7 @@ async function createDisbursement(withdrawalData) {
     );
 
     console.log('✅ DANA disbursement created successfully');
+    console.log(`📝 DANA Response:`, JSON.stringify(response.data, null, 2));
 
     return {
       success: true,
@@ -117,6 +120,16 @@ async function createDisbursement(withdrawalData) {
     const statusCode = error.response?.status;
     
     console.error(`❌ DANA disbursement failed (HTTP ${statusCode}): ${errorMsg}`);
+    console.error(`📋 Error Details:`, {
+      statusCode: error.response?.status,
+      errorData: error.response?.data,
+      message: error.message,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers ? Object.keys(error.config.headers) : []
+      }
+    });
     
     return {
       success: false,
