@@ -74,10 +74,6 @@ async function getDanaAccessToken() {
     throw new Error('Failed to authenticate with DANA');
   }
 }
-    console.error('❌ Failed to get DANA access token:', error.response?.data || error.message);
-    throw new Error('Failed to authenticate with DANA');
-  }
-}
 
 /**
  * Map bank names to DANA bank codes
