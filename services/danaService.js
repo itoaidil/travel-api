@@ -172,19 +172,38 @@ async function createDisbursement(withdrawalData) {
       throw lastError;
     }
 
-    // Extract disbursement ID from response (check multiple possible field names)
-    const disbursementId = response.data?.disbursementId || 
-                          response.data?.referenceNo || 
-                          response.data?.transactionId ||
-                          response.data?.partnerReferenceNo ||
+    // DANA response format (from official testing scenarios):
+    // {
+    //   "responseCode": "2004300",
+    //   "responseMessage": "Success",
+    //   "data": {
+    //     "referenceNo": "...",
+    //     "disbursementId": "...",
+    //     "status": "PROCESSING" | "SUCCESS" | "FAILED"
+    //   }
+    // }
+
+    // Verify success response code
+    const responseCode = response.data?.responseCode;
+    const responseMessage = response.data?.responseMessage;
+    const danaData = response.data?.data || response.data; // data could be nested or flat
+    
+    console.log(`📊 DANA Response Code: ${responseCode}`);
+    console.log(`📌 DANA Message: ${responseMessage}`);
+    console.log(`📦 DANA Data:`, JSON.stringify(danaData, null, 2));
+
+    // Extract disbursement ID from DANA response
+    const disbursementId = danaData?.disbursementId || 
+                          danaData?.referenceNo || 
+                          danaData?.transactionId ||
                           null;
     
-    const status = response.data?.status || response.data?.disbursementStatus || 'PROCESSING';
+    const status = danaData?.status || 'PROCESSING';
 
-    console.log(`🔍 Extracted from DANA response:`, {
+    console.log(`✅ Extracted DANA Disbursement:`, {
+      responseCode: responseCode,
       disbursementId: disbursementId,
-      status: status,
-      rawResponse: response.data
+      status: status
     });
 
     return {
@@ -192,29 +211,30 @@ async function createDisbursement(withdrawalData) {
       disbursementId: disbursementId,
       partnerReferenceNo: partnerReferenceNo,
       status: status,
+      responseCode: responseCode,
       response: response.data
     };
 
   } catch (error) {
-    const errorMsg = error.response?.data?.message || error.response?.data?.responseMessage || error.message;
+    // Extract DANA error message from response
+    const danaErrorCode = error.response?.data?.errorCode || error.response?.data?.responseCode;
+    const danaErrorMsg = error.response?.data?.errorMessage || 
+                        error.response?.data?.responseMessage || 
+                        error.response?.data?.message || 
+                        error.message;
     const statusCode = error.response?.status;
     
-    console.error(`❌ DANA disbursement failed (HTTP ${statusCode}): ${errorMsg}`);
-    console.error(`📋 Error Details:`, {
-      statusCode: error.response?.status,
-      errorData: error.response?.data,
-      message: error.message,
-      config: {
-        url: error.config?.url,
-        method: error.config?.method,
-        headers: error.config?.headers ? Object.keys(error.config.headers) : []
-      }
+    console.error(`❌ DANA disbursement failed:`, {
+      httpStatus: statusCode,
+      danaResponseCode: danaErrorCode,
+      danaMessage: danaErrorMsg,
+      fullResponse: JSON.stringify(error.response?.data, null, 2)
     });
     
     return {
       success: false,
-      error: errorMsg,
-      errorCode: error.response?.data?.code || statusCode || 'UNKNOWN_ERROR',
+      error: danaErrorMsg || 'DANA API Error',
+      errorCode: danaErrorCode || statusCode || 'UNKNOWN_ERROR',
       statusCode: statusCode
     };
   }
