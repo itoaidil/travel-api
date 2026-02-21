@@ -23,13 +23,23 @@ async function getDanaAccessToken() {
     let baseUrl = process.env.DANA_BASE_URL;
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash if any
     
+    // Determine if base URL already includes /v1
+    const hasV1 = baseUrl.includes('/v1');
+    
     // Try different OAuth endpoint paths
-    const tokenEndpoints = [
-      `${baseUrl}/v1/oauth/token`,              // Standard
-      `${baseUrl}/oauth/token`,                 // Without /v1
-      `${baseUrl}/v1/auth/token`,               // Alternative name
-      `${baseUrl}/v1/authorize/token`           // Another alternative
-    ];
+    const tokenEndpoints = hasV1
+      ? [
+          `${baseUrl}/oauth/token`,              // If base already has /v1
+          `${baseUrl}/auth/token`,               // Alternative
+          `${baseUrl}/authorize/token`,          // Another alternative
+          `${baseUrl}/oauth2/token`              // OAuth2 variant
+        ]
+      : [
+          `${baseUrl}/v1/oauth/token`,           // Standard (no /v1 in base)
+          `${baseUrl}/oauth/token`,              // Without /v1
+          `${baseUrl}/v1/auth/token`,            // Alternative name
+          `${baseUrl}/v1/authorize/token`        // Another alternative
+        ];
 
     let lastError = null;
     let tokenResponse = null;
