@@ -130,14 +130,30 @@ function getBankCode(bankName) {
 }
 
 /**
- * Generate signature for DANA request
+ * Generate RSA signature for DANA request using Private Key
  */
 function generateSignature(payload, timestamp) {
-  const stringToSign = `${timestamp}:${JSON.stringify(payload)}`;
-  return crypto
-    .createHmac('sha256', process.env.DANA_CLIENT_SECRET)
-    .update(stringToSign)
-    .digest('hex');
+  try {
+    const stringToSign = `${timestamp}:${JSON.stringify(payload)}`;
+    
+    // Use RSA-SHA256 signature with DANA_PRIVATE_KEY
+    if (process.env.DANA_PRIVATE_KEY) {
+      const privateKey = `-----BEGIN PRIVATE KEY-----\n${process.env.DANA_PRIVATE_KEY}\n-----END PRIVATE KEY-----`;
+      const sign = crypto.createSign('RSA-SHA256');
+      sign.update(stringToSign);
+      const signature = sign.sign(privateKey, 'base64');
+      return signature;
+    }
+    
+    // Fallback to HMAC if no private key (legacy)
+    return crypto
+      .createHmac('sha256', process.env.DANA_CLIENT_SECRET)
+      .update(stringToSign)
+      .digest('hex');
+  } catch (error) {
+    console.error('❌ Signature generation failed:', error.message);
+    throw error;
+  }
 }
 
 /**
@@ -148,9 +164,6 @@ function generateSignature(payload, timestamp) {
 async function createDisbursement(withdrawalData) {
   try {
     console.log('🚀 Creating DANA disbursement for withdrawal:', withdrawalData.id);
-
-    // Get access token
-    const accessToken = await getDanaAccessToken();
 
     // Prepare disbursement payload
     const timestamp = new Date().toISOString();
@@ -172,8 +185,13 @@ async function createDisbursement(withdrawalData) {
       }
     };
 
-    // Generate signature
+    // Generate RSA signature
     const signature = generateSignature(payload, timestamp);
+    
+    // Prepare authentication (use Client ID + Secret as Basic Auth)
+    const credentials = Buffer.from(
+      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
+    ).toString('base64');
 
     // Construct DANA Disbursement endpoint using Railway BASE_URL
     let baseUrl = process.env.DANA_BASE_URL;
@@ -185,13 +203,13 @@ async function createDisbursement(withdrawalData) {
 
     console.log(`💸 Calling DANA transfer endpoint: ${disbursementEndpoint}`);
 
-    // Call DANA Disbursement API
+    // Call DANA Disbursement API with Basic Auth + RSA Signature
     const response = await axios.post(
       disbursementEndpoint,
       payload,
       {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Basic ${credentials}`,
           'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
           'X-DANA-Timestamp': timestamp,
           'X-DANA-Signature': signature,
@@ -229,8 +247,12 @@ async function createDisbursement(withdrawalData) {
  */
 async function checkDisbursementStatus(partnerReferenceNo) {
   try {
-    const accessToken = await getDanaAccessToken();
     const timestamp = new Date().toISOString();
+    
+    // Prepare authentication
+    const credentials = Buffer.from(
+      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
+    ).toString('base64');
 
     // Construct DANA status endpoint using Railway BASE_URL
     let baseUrl = process.env.DANA_BASE_URL;
@@ -247,7 +269,7 @@ async function checkDisbursementStatus(partnerReferenceNo) {
           partnerReferenceNo: partnerReferenceNo
         },
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Basic ${credentials}`,
           'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
           'X-DANA-Timestamp': timestamp,
           'Content-Type': 'application/json'
