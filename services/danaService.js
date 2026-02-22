@@ -117,8 +117,9 @@ async function createDisbursement(withdrawalData) {
     // IMPORTANT: Use /v1.0/emoney/transfer-bank.htm (correct endpoint from official DANA docs)
     // DO NOT use /v1/emoney/transfer-bank.htm (deprecated, returns empty response)
     const endpoints = [
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,     // Official endpoint (requires RSA signature)
-      `${baseUrl}/v1/emoney/transfer-bank.htm`        // Fallback (returns 200 but needs callback for disbursement ID)
+      `${baseUrl}/v1/disbursements`,                  // Standard disbursement endpoint
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,    // Official endpoint (requires RSA signature)
+      `${baseUrl}/v1/emoney/transfer-bank.htm`       // Fallback (returns 200 but empty)
     ];
 
     let response = null;
