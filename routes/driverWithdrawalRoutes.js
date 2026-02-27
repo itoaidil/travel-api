@@ -131,44 +131,49 @@ router.post('/request', async (req, res) => {
 
     console.log(`✅ Withdrawal request created - Driver ${driver_id}, Amount: ${withdrawal_amount} - Auto-triggering DANA transfer...`);
 
-    // ===== AUTO-TRIGGER DANA API (No admin manual approval needed) =====
-    danaService.createDisbursement({
-      id: withdrawalId,
-      driver_id: driver_id,
-      amount: withdrawal_amount,
-      bank_name: finalBankName,
-      bank_account_number: finalAccountNumber,
-      bank_account_holder: finalAccountHolder,
-      phone: driver.phone  // ✅ Added phone for 628xxxx format
-    }).then(result => {
-      if (result.success) {
-        console.log(`✅ DANA transfer initiated for withdrawal ${withdrawalId}`);
-        // Update dengan DANA tracking info
-        db.query(
-          `UPDATE driver_withdrawals 
-           SET partner_reference_no = ?, 
-               dana_disbursement_id = ?,
-               dana_status = ?
-           WHERE id = ?`,
-          [result.partnerReferenceNo, result.disbursementId, result.status, withdrawalId]
-        );
-      } else {
-        console.error(`❌ DANA transfer failed for withdrawal ${withdrawalId}:`, result.error);
-        // If DANA fails, store error but keep as processing (can retry later)
-        db.query(
-          `UPDATE driver_withdrawals 
-           SET dana_failure_reason = ?,
-               dana_status = 'FAILED_INITIAL'
-           WHERE id = ?`,
-          [result.error, withdrawalId]
+    // ===== AUTO-TRIGGER DANA API ASYNC (Fire and forget - don't block response) =====
+    // Wrap in setImmediate to truly make it async
+    setImmediate(async () => {
+      try {
+        const danaResult = await danaService.createDisbursement({
+          id: withdrawalId,
+          driver_id: driver_id,
+          amount: withdrawal_amount,
+          bank_name: finalBankName,
+          bank_account_number: finalAccountNumber,
+          bank_account_holder: finalAccountHolder,
+          phone: driver.phone  // ✅ Added phone for 628xxxx format
+        });
+
+        if (danaResult.success) {
+          console.log(`✅ DANA transfer initiated for withdrawal ${withdrawalId}`);
+          // Update dengan DANA tracking info
+          await db.query(
+            `UPDATE driver_withdrawals 
+             SET partner_reference_no = ?, 
+                 dana_disbursement_id = ?,
+                 dana_status = ?
+             WHERE id = ?`,
+            [danaResult.partnerReferenceNo, danaResult.disbursementId, danaResult.status, withdrawalId]
+          );
+        } else {
+          console.error(`❌ DANA transfer failed for withdrawal ${withdrawalId}:`, danaResult.error);
+          // If DANA fails, store error but keep as processing (can retry later)
+          await db.query(
+            `UPDATE driver_withdrawals 
+             SET dana_failure_reason = ?,
+                 dana_status = 'FAILED_INITIAL'
+             WHERE id = ?`,
+            [danaResult.error, withdrawalId]
+          );
+        }
+      } catch (error) {
+        console.error(`❌ DANA error for withdrawal ${withdrawalId}:`, error.message);
+        await db.query(
+          'UPDATE driver_withdrawals SET dana_failure_reason = ? WHERE id = ?',
+          [error.message, withdrawalId]
         );
       }
-    }).catch(error => {
-      console.error(`❌ DANA error for withdrawal ${withdrawalId}:`, error.message);
-      db.query(
-        'UPDATE driver_withdrawals SET dana_failure_reason = ? WHERE id = ?',
-        [error.message, withdrawalId]
-      );
     });
 
     return res.json({
