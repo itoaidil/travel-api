@@ -194,7 +194,7 @@ async function sendOTPEmail(email, otpCode) {
   if (EMAIL_MODE === 'production' && resend) {
     try {
       const { data, error } = await resend.emails.send({
-        from: 'Hantar Travel <onboarding@resend.dev>',
+        from: EMAIL_FROM || 'Hantar Travel <onboarding@resend.dev>',
         to: email,
         subject: emailSubject,
         html: emailHTML
