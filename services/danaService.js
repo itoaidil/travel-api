@@ -121,11 +121,11 @@ async function createDisbursement(withdrawalData) {
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
-    // Use v2 endpoint as per DANA latest spec
+    // Use v1/emoney/transfer-bank.htm as primary (sandbox tested endpoint)
     const endpoints = [
-      `${baseUrl}/v2/transfer-bank`,                  // v2 endpoint per spec
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,    // v1.0 endpoint
-      `${baseUrl}/v1/emoney/transfer-bank.htm`       // v1 fallback
+      `${baseUrl}/v1/emoney/transfer-bank.htm`,      // v1 emoney endpoint (PRIMARY) ✅
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,    // v1.0 endpoint 
+      `${baseUrl}/v2/transfer-bank`                  // v2 endpoint
     ];
 
     let response = null;
