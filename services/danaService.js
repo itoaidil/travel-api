@@ -86,15 +86,19 @@ async function createDisbursement(withdrawalData) {
     // Get bank code for beneficiary
     const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
     
-    // Format phone to 628xxxx format (DANA requirement)
-    let customerNumber = withdrawalData.phone || getDanaCustomerNumber();
-    if (customerNumber && !customerNumber.startsWith('628')) {
-      // Remove leading 0 or + if exists
-      customerNumber = customerNumber.replace(/^[0+]/, '');
-      // Add 62 prefix
-      customerNumber = '62' + customerNumber;
+    // Format phone to strict 628xxxx format (DANA requirement)
+    let customerNumber = (withdrawalData.phone || '').toString().replace(/\D/g, '');
+    if (customerNumber.startsWith('0')) {
+      customerNumber = `62${customerNumber.slice(1)}`;
+    } else if (customerNumber.startsWith('8')) {
+      customerNumber = `62${customerNumber}`;
     }
-    console.log(`📱 Using DANA customerNumber from phone: ${customerNumber}`);
+
+    if (!/^628\d+$/.test(customerNumber)) {
+      throw new Error(`Invalid driver phone format for customerNumber: ${withdrawalData.phone}`);
+    }
+
+    console.log(`📱 Using DANA customerNumber from driver phone: ${customerNumber}`);
     
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
@@ -103,13 +107,17 @@ async function createDisbursement(withdrawalData) {
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
       customerNumber: customerNumber,  // ✅ Phone format 628xxxx
-      beneficiaryAccountNumber: withdrawalData.bank_account_number,
+      beneficiaryAccountNumber: '2460888509', // ✅ DANA testing account
       beneficiaryBankCode: beneficiaryBankCode,
       amount: {
         value: amountValue,  // ✅ With .00 format
         currency: 'IDR'
+      },
+      additionalInfo: {
+        fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
+        needNotify: true
       }
-      // ✅ Removed: beneficiaryAccountName, description, additionalInfo
+      // ✅ Removed: beneficiaryAccountName, description
     };
 
     // Basic auth with Client ID and Secret
