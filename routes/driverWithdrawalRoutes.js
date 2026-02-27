@@ -63,7 +63,7 @@ router.post('/request', async (req, res) => {
 
     // Check driver exists
     const [drivers] = await db.query(
-      'SELECT id, total_earnings, bank_account_number, bank_account_holder, bank_name FROM independent_drivers WHERE id = ?',
+      'SELECT id, total_earnings, bank_account_number, bank_account_holder, bank_name, phone FROM independent_drivers WHERE id = ?',
       [driver_id]
     );
 
@@ -138,7 +138,8 @@ router.post('/request', async (req, res) => {
       amount: withdrawal_amount,
       bank_name: finalBankName,
       bank_account_number: finalAccountNumber,
-      bank_account_holder: finalAccountHolder
+      bank_account_holder: finalAccountHolder,
+      phone: driver.phone  // ✅ Added phone for 628xxxx format
     }).then(result => {
       if (result.success) {
         console.log(`✅ DANA transfer initiated for withdrawal ${withdrawalId}`);
@@ -461,7 +462,7 @@ router.post('/admin/:id/approve', async (req, res) => {
 
   try {
     const [withdrawals] = await db.query(
-      `SELECT dw.*, id.bank_name, id.bank_account_number, id.bank_account_holder
+      `SELECT dw.*, id.bank_name, id.bank_account_number, id.bank_account_holder, id.phone
        FROM driver_withdrawals dw
        LEFT JOIN independent_drivers id ON dw.driver_id = id.id
        WHERE dw.id = ?`,
@@ -499,7 +500,8 @@ router.post('/admin/:id/approve', async (req, res) => {
       amount: withdrawal.amount,
       bank_name: withdrawal.bank_name,
       bank_account_number: withdrawal.bank_account_number,
-      bank_account_holder: withdrawal.bank_account_holder
+      bank_account_holder: withdrawal.bank_account_holder,
+      phone: withdrawal.phone  // ✅ Added phone for 628xxxx format
     }).then(result => {
       if (result.success) {
         console.log(`✅ DANA disbursement initiated for withdrawal ${id}`);

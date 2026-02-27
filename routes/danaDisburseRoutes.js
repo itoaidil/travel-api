@@ -124,6 +124,17 @@ router.post('/dana-disburse-callback', async (req, res) => {
         responseMessage: 'Missing required fields'
       });
     }
+    
+    // ✅ WICHTIG: Only process callbacks with valid DANA statuses
+    // Expected: SUCCESS, FAILED, PROCESSING, or "Request In Progress"
+    const validStatuses = ['SUCCESS', 'FAILED', 'PROCESSING', 'Request In Progress', 'PENDING'];
+    if (!validStatuses.includes(disbursementStatus)) {
+      console.warn(`⚠️  Ignoring callback with status: ${disbursementStatus} (not in valid list)`);
+      return res.status(400).json({
+        responseCode: '4000000',
+        responseMessage: 'Invalid disbursement status'
+      });
+    }
 
     // Extract withdrawal ID from partnerReferenceNo
     // Format: WD-123 or just 123
