@@ -43,9 +43,21 @@ function normalizePrivateKey(rawKey) {
       const decoded = Buffer.from(key.replace(/\s+/g, ''), 'base64').toString('utf8');
       if (decoded.includes('-----BEGIN')) {
         key = decoded;
+      } else {
+        // Raw base64 DER format - wrap with PEM headers
+        const base64Content = key.replace(/\s+/g, '');
+        const lines = base64Content.match(/.{1,64}/g) || [];
+        key = '-----BEGIN RSA PRIVATE KEY-----\n' + 
+              lines.join('\n') + '\n' +
+              '-----END RSA PRIVATE KEY-----';
       }
     } catch (error) {
-      console.warn('⚠️  Unable to decode base64 DANA private key, using raw value');
+      console.warn('⚠️  Unable to process DANA private key, wrapping as PEM');
+      const base64Content = key.replace(/\s+/g, '');
+      const lines = base64Content.match(/.{1,64}/g) || [];
+      key = '-----BEGIN RSA PRIVATE KEY-----\n' + 
+            lines.join('\n') + '\n' +
+            '-----END RSA PRIVATE KEY-----';
     }
   }
 
