@@ -269,11 +269,16 @@ async function createDisbursement(withdrawalData) {
 
     console.log(`💸 Trying DANA transfer-to-bank with ${endpoints.length} endpoint variants...`);
     console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
+    console.log(`📋 Request Headers:`, {
+      ...headers,
+      'X-SIGNATURE': headers['X-SIGNATURE'] ? headers['X-SIGNATURE'].substring(0, 30) + '...' : 'missing'
+    });
 
     // Try each endpoint until one works
     for (const endpoint of endpoints) {
       try {
         console.log(`🔄 Trying endpoint: ${endpoint.url}`);
+        console.log(`⏱️  Using timeout: 30000ms (30 seconds)`);
         
         response = await axios.post(
           endpoint.url,
@@ -282,7 +287,7 @@ async function createDisbursement(withdrawalData) {
             headers: {
               ...headers
             },
-            timeout: 8000
+            timeout: 30000
           }
         );
 
