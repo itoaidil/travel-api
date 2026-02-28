@@ -27,17 +27,47 @@ function buildExternalId() {
   return seed.slice(0, 18);
 }
 
+function normalizePrivateKey(rawKey) {
+  if (!rawKey) {
+    return '';
+  }
+
+  let key = rawKey.trim();
+
+  if (key.includes('\\n')) {
+    key = key.replace(/\\n/g, '\n');
+  }
+
+  if (!key.includes('-----BEGIN') && /^[A-Za-z0-9+/=\r\n]+$/.test(key)) {
+    try {
+      const decoded = Buffer.from(key.replace(/\s+/g, ''), 'base64').toString('utf8');
+      if (decoded.includes('-----BEGIN')) {
+        key = decoded;
+      }
+    } catch (error) {
+      console.warn('⚠️  Unable to decode base64 DANA private key, using raw value');
+    }
+  }
+
+  return key;
+}
+
 function generateDanaSignature(partnerId, timestamp) {
-  const privateKey = process.env.DANA_PRIVATE_KEY;
+  const privateKey = normalizePrivateKey(process.env.DANA_PRIVATE_KEY || '');
   if (!privateKey) {
     return process.env.DANA_SIGNATURE || '';
   }
 
   const stringToSign = `${partnerId}|${timestamp}`;
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(stringToSign);
-  signer.end();
-  return signer.sign(privateKey, 'base64');
+  try {
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(stringToSign);
+    signer.end();
+    return signer.sign(privateKey, 'base64');
+  } catch (error) {
+    console.error('❌ Failed to generate DANA signature:', error.message);
+    return process.env.DANA_SIGNATURE || '';
+  }
 }
 
 function buildDanaHeaders() {
