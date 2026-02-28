@@ -64,34 +64,46 @@ function normalizePrivateKey(rawKey) {
   return key;
 }
 
-function generateDanaSignature(partnerId, timestamp) {
+function generateDanaSignature(method, relativePath, body, timestamp) {
   const privateKey = normalizePrivateKey(process.env.DANA_PRIVATE_KEY || '');
   if (!privateKey) {
     return process.env.DANA_SIGNATURE || '';
   }
 
-  const stringToSign = `${partnerId}|${timestamp}`;
+  // SNAP format: METHOD:RELATIVE_PATH:SHA256(body):X-TIMESTAMP
+  const bodyHash = crypto.createHash('sha256')
+    .update(JSON.stringify(body))
+    .digest('hex')
+    .toLowerCase();
+  
+  const stringToSign = `${method}:${relativePath}:${bodyHash}:${timestamp}`;
+  
+  console.log('🔐 Generating SNAP signature:');
+  console.log('  Method:', method);
+  console.log('  Path:', relativePath);
+  console.log('  Body SHA256:', bodyHash);
+  console.log('  Timestamp:', timestamp);
+  console.log('  String to sign:', stringToSign);
+  
   try {
     const signer = crypto.createSign('RSA-SHA256');
     signer.update(stringToSign);
     signer.end();
-    return signer.sign(privateKey, 'base64');
+    const signature = signer.sign(privateKey, 'base64');
+    console.log('✅ Signature generated:', signature.substring(0, 30) + '...');
+    return signature;
   } catch (error) {
     console.error('❌ Failed to generate DANA signature:', error.message);
     return process.env.DANA_SIGNATURE || '';
   }
 }
 
-function buildDanaHeaders() {
+function buildDanaHeaders(method, relativePath, body) {
   const partnerId = getDanaPartnerId();
   const bearerToken = getDanaBearerToken();
   const timestamp = getWibTimestamp();
   const externalId = buildExternalId();
-  const signature = generateDanaSignature(partnerId, timestamp);
-
-  if (!bearerToken) {
-    throw new Error('DANA_ACCESS_TOKEN is required for Authorization: Bearer');
-  }
+  const signature = generateDanaSignature(method, relativePath, body, timestamp);
 
   if (!partnerId) {
     throw new Error('DANA_PARTNER_ID / DANA_CLIENT_ID is required');
@@ -101,8 +113,7 @@ function buildDanaHeaders() {
     throw new Error('DANA signature is missing. Set DANA_PRIVATE_KEY or DANA_SIGNATURE');
   }
 
-  return {
-    'Authorization': `Bearer ${bearerToken}`,
+  const headers = {
     'X-TIMESTAMP': timestamp,
     'X-SIGNATURE': signature,
     'X-PARTNER-ID': partnerId,
@@ -111,6 +122,16 @@ function buildDanaHeaders() {
     'Accept': 'application/json',
     'Content-Type': 'application/json'
   };
+
+  // Bearer token is OPTIONAL (only for symmetric signature)
+  if (bearerToken) {
+    headers['Authorization'] = `Bearer ${bearerToken}`;
+    console.log('🔑 Using symmetric signature with Bearer token');
+  } else {
+    console.log('🔑 Using asymmetric signature (SNAP default)');
+  }
+
+  return headers;
 }
 
 /**
@@ -227,8 +248,6 @@ async function createDisbursement(withdrawalData) {
       // ✅ Removed: beneficiaryAccountName, description
     };
 
-    const headers = buildDanaHeaders();
-
     // DANA API endpoint - latest spec
     // POST /v1.0/emoney/transfer-bank.htm
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
@@ -236,9 +255,14 @@ async function createDisbursement(withdrawalData) {
     
     // Per DANA IT: use v1.0 as primary
     const endpoints = [
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,
-      `${baseUrl}/v1/emoney/transfer-bank.htm`
+      { url: `${baseUrl}/v1.0/emoney/transfer-bank.htm`, path: '/v1.0/emoney/transfer-bank.htm' },
+      { url: `${baseUrl}/v1/emoney/transfer-bank.htm`, path: '/v1/emoney/transfer-bank.htm' }
     ];
+
+    // Build headers with SNAP signature
+    const method = 'POST';
+    const relativePath = endpoints[0].path; // Use v1.0 for signature
+    const headers = buildDanaHeaders(method, relativePath, payload);
 
     let response = null;
     let lastError = null;
@@ -249,10 +273,10 @@ async function createDisbursement(withdrawalData) {
     // Try each endpoint until one works
     for (const endpoint of endpoints) {
       try {
-        console.log(`🔄 Trying endpoint: ${endpoint}`);
+        console.log(`🔄 Trying endpoint: ${endpoint.url}`);
         
         response = await axios.post(
-          endpoint,
+          endpoint.url,
           payload,
           {
             headers: {
@@ -262,7 +286,7 @@ async function createDisbursement(withdrawalData) {
           }
         );
 
-        console.log(`✅ Success with endpoint: ${endpoint}`);
+        console.log(`✅ Success with endpoint: ${endpoint.url}`);
         console.log(`📝 DANA Response Status: ${response.status}`);
         console.log(`📝 DANA Response Headers:`, {
           'content-type': response.headers['content-type'],
@@ -274,7 +298,7 @@ async function createDisbursement(withdrawalData) {
         
       } catch (err) {
         lastError = err;
-        console.warn(`⚠️  Endpoint ${endpoint} failed: HTTP ${err.response?.status}`);
+        console.warn(`⚠️  Endpoint ${endpoint.url} failed: HTTP ${err.response?.status}`);
         console.warn(`⚠️  Error Response:`, {
           status: err.response?.status,
           statusText: err.response?.statusText,
@@ -366,17 +390,23 @@ async function checkDisbursementStatus(partnerReferenceNo) {
   try {
     console.log('🔍 Checking DANA disbursement status:', partnerReferenceNo);
 
-    const headers = buildDanaHeaders();
-
     // DANA API endpoint for status check
     // https://github.com/dana-id/dana-node - POST /v1.0/emoney/transfer-bank-status.htm
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, '');
     
     const endpoints = [
-      `${baseUrl}/v1.0/emoney/transfer-bank-status.htm`,  // Official endpoint
-      `${baseUrl}/v1/emoney/transfer-bank-status.htm`     // Alternative
+      { url: `${baseUrl}/v1.0/emoney/transfer-bank-status.htm`, path: '/v1.0/emoney/transfer-bank-status.htm' },
+      { url: `${baseUrl}/v1/emoney/transfer-bank-status.htm`, path: '/v1/emoney/transfer-bank-status.htm' }
     ];
+
+    // Build request payload
+    const payload = { partnerReferenceNo: partnerReferenceNo };
+    
+    // Build headers with SNAP signature
+    const method = 'POST';
+    const relativePath = endpoints[0].path;
+    const headers = buildDanaHeaders(method, relativePath, payload);
 
     let response = null;
     let lastError = null;
@@ -386,11 +416,11 @@ async function checkDisbursementStatus(partnerReferenceNo) {
     // Try each endpoint
     for (const endpoint of endpoints) {
       try {
-        console.log(`🔄 Trying endpoint: ${endpoint}`);
+        console.log(`🔄 Trying endpoint: ${endpoint.url}`);
         
         response = await axios.post(
-          endpoint,
-          { partnerReferenceNo: partnerReferenceNo },
+          endpoint.url,
+          payload,
           {
             headers: {
               ...headers
@@ -399,12 +429,12 @@ async function checkDisbursementStatus(partnerReferenceNo) {
           }
         );
 
-        console.log(`✅ Success with endpoint: ${endpoint}`);
+        console.log(`✅ Success with endpoint: ${endpoint.url}`);
         break;
         
       } catch (err) {
         lastError = err;
-        console.warn(`⚠️  Endpoint ${endpoint} failed: HTTP ${err.response?.status}`);
+        console.warn(`⚠️  Endpoint ${endpoint.url} failed: HTTP ${err.response?.status}`);
       }
     }
 
