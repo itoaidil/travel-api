@@ -382,6 +382,23 @@ async function createDisbursement(withdrawalData) {
                         error.message;
     const statusCode = error.response?.status;
     
+    // Special handling for gateway errors (DANA sandbox down)
+    if (statusCode === 502 || statusCode === 504) {
+      console.error(`🔴 DANA Sandbox appears to be down or under maintenance`);
+      console.error(`   Status: ${statusCode} ${statusCode === 502 ? 'Bad Gateway' : 'Gateway Timeout'}`);
+      console.error(`   This is a DANA server issue, not a request issue.`);
+      console.error(`   ⏰ Retry later or contact DANA IT support.`);
+      
+      return {
+        success: false,
+        error: 'DANA_SANDBOX_UNAVAILABLE',
+        errorMessage: `DANA sandbox is currently unavailable (${statusCode}). Please try again later.`,
+        errorCode: 'SERVICE_UNAVAILABLE',
+        statusCode: statusCode,
+        retryable: true
+      };
+    }
+    
     // For actual errors (4xx, 5xx)
     console.error(`❌ DANA disbursement failed:`, {
       httpStatus: statusCode,
@@ -394,7 +411,8 @@ async function createDisbursement(withdrawalData) {
       success: false,
       error: danaErrorMsg || 'DANA API Error',
       errorCode: danaErrorCode || statusCode || 'UNKNOWN_ERROR',
-      statusCode: statusCode
+      statusCode: statusCode,
+      retryable: false
     };
   }
 }
