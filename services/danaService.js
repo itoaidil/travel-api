@@ -5,6 +5,71 @@
  */
 
 const axios = require('axios');
+const crypto = require('crypto');
+
+function getWibTimestamp() {
+  const now = new Date();
+  const wibMs = now.getTime() + (7 * 60 * 60 * 1000);
+  const wibDate = new Date(wibMs);
+  return `${wibDate.toISOString().replace('Z', '')}+07:00`;
+}
+
+function getDanaPartnerId() {
+  return process.env.DANA_PARTNER_ID || process.env.DANA_CLIENT_ID || '';
+}
+
+function getDanaBearerToken() {
+  return process.env.DANA_ACCESS_TOKEN || process.env.DANA_BEARER_TOKEN || '';
+}
+
+function buildExternalId() {
+  const seed = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  return seed.slice(0, 18);
+}
+
+function generateDanaSignature(partnerId, timestamp) {
+  const privateKey = process.env.DANA_PRIVATE_KEY;
+  if (!privateKey) {
+    return process.env.DANA_SIGNATURE || '';
+  }
+
+  const stringToSign = `${partnerId}|${timestamp}`;
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(stringToSign);
+  signer.end();
+  return signer.sign(privateKey, 'base64');
+}
+
+function buildDanaHeaders() {
+  const partnerId = getDanaPartnerId();
+  const bearerToken = getDanaBearerToken();
+  const timestamp = getWibTimestamp();
+  const externalId = buildExternalId();
+  const signature = generateDanaSignature(partnerId, timestamp);
+
+  if (!bearerToken) {
+    throw new Error('DANA_ACCESS_TOKEN is required for Authorization: Bearer');
+  }
+
+  if (!partnerId) {
+    throw new Error('DANA_PARTNER_ID / DANA_CLIENT_ID is required');
+  }
+
+  if (!signature) {
+    throw new Error('DANA signature is missing. Set DANA_PRIVATE_KEY or DANA_SIGNATURE');
+  }
+
+  return {
+    'Authorization': `Bearer ${bearerToken}`,
+    'X-TIMESTAMP': timestamp,
+    'X-SIGNATURE': signature,
+    'X-PARTNER-ID': partnerId,
+    'X-EXTERNAL-ID': externalId,
+    'CHANNEL-ID': process.env.DANA_CHANNEL_ID || '00001',
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+  };
+}
 
 /**
  * Map bank names to DANA bank codes
@@ -120,20 +185,17 @@ async function createDisbursement(withdrawalData) {
       // ✅ Removed: beneficiaryAccountName, description
     };
 
-    // Basic auth with Client ID and Secret
-    const credentials = Buffer.from(
-      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
-    ).toString('base64');
+    const headers = buildDanaHeaders();
 
-    // DANA API endpoint - per spec from https://dashboard.dana.id/api-docs-v2/api/disbursement/transfer-to-bank
+    // DANA API endpoint - latest spec
+    // POST /v1.0/emoney/transfer-bank.htm
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
     baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     
-    // Use v1/emoney/transfer-bank.htm as primary (sandbox tested endpoint)
+    // Per DANA IT: use v1.0 as primary
     const endpoints = [
-      `${baseUrl}/v1/emoney/transfer-bank.htm`,      // v1 emoney endpoint (PRIMARY) ✅
-      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,    // v1.0 endpoint 
-      `${baseUrl}/v2/transfer-bank`                  // v2 endpoint
+      `${baseUrl}/v1.0/emoney/transfer-bank.htm`,
+      `${baseUrl}/v1/emoney/transfer-bank.htm`
     ];
 
     let response = null;
@@ -152,11 +214,9 @@ async function createDisbursement(withdrawalData) {
           payload,
           {
             headers: {
-              'Authorization': `Basic ${credentials}`,
-              'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
-              'Content-Type': 'application/json'
+              ...headers
             },
-            timeout: 15000
+            timeout: 8000
           }
         );
 
@@ -187,38 +247,32 @@ async function createDisbursement(withdrawalData) {
       throw lastError;
     }
 
-    // DANA response format varies:
-    // v1.0 endpoint (with RSA signature):
-    // {
-    //   "responseCode": "2004300",
-    //   "responseMessage": "Success",
-    //   "data": {
-    //     "referenceNo": "...",
-    //     "disbursementId": "...",
-    //     "status": "PROCESSING" | "SUCCESS" | "FAILED"
-    //   }
-    // }
-    //
-    // v1 endpoint (Basic Auth):
-    // Returns 200/201 but `disbursementId` comes from callback webhook
-    // Expected: {"responseCode": "2004300"} or empty body with 200
-
-    // Verify success response code
+    // DANA response format (latest):
+    // 2004300 => Successful
+    // 2024300 => Request In Progress
     const responseCode = response.data?.responseCode;
     const responseMessage = response.data?.responseMessage;
-    const danaData = response.data?.data || response.data; // data could be nested or flat
+    const danaData = response.data?.data || response.data;
     
     console.log(`📊 DANA Response Code: ${responseCode}`);
     console.log(`📌 DANA Message: ${responseMessage}`);
     console.log(`📦 DANA Data:`, JSON.stringify(danaData, null, 2));
 
-    // Extract disbursement ID from DANA response (may be null if from callback)
+    // Extract transaction reference from top-level response
     const disbursementId = danaData?.disbursementId || 
                           danaData?.referenceNo || 
                           danaData?.transactionId ||
-                          null; // ✅ Can be null - will come from webhook callback
+                          response.data?.referenceNo ||
+                          null;
     
-    const status = danaData?.status || 'PROCESSING';
+    let status = 'FAILED';
+    if (responseCode === '2004300') {
+      status = 'SUCCESS';
+    } else if (responseCode === '2024300') {
+      status = 'PROCESSING';
+    } else if (danaData?.status) {
+      status = danaData.status;
+    }
 
     console.log(`✅ DANA Request Accepted:`, {
       responseCode: responseCode,
@@ -227,7 +281,7 @@ async function createDisbursement(withdrawalData) {
     });
 
     return {
-      success: true,
+      success: responseCode === '2004300' || responseCode === '2024300',
       disbursementId: disbursementId,  // ✅ Can be null - callback will update it
       partnerReferenceNo: partnerReferenceNo,
       status: status,
@@ -243,22 +297,6 @@ async function createDisbursement(withdrawalData) {
                         error.response?.data?.message || 
                         error.message;
     const statusCode = error.response?.status;
-    
-    // For /v1/ endpoints, HTTP 200 is success even if body is empty
-    // disbursementId will come from callback webhook
-    if (statusCode === 200 || statusCode === 201) {
-      console.log(`✅ DANA accepted request (HTTP ${statusCode})`);
-      console.log(`📝 Response:`, JSON.stringify(error.response?.data, null, 2));
-      
-      return {
-        success: true,
-        disbursementId: null,  // Will come from callback
-        partnerReferenceNo: partnerReferenceNo,
-        status: 'PROCESSING',
-        responseCode: statusCode,
-        response: error.response?.data
-      };
-    }
     
     // For actual errors (4xx, 5xx)
     console.error(`❌ DANA disbursement failed:`, {
@@ -286,10 +324,7 @@ async function checkDisbursementStatus(partnerReferenceNo) {
   try {
     console.log('🔍 Checking DANA disbursement status:', partnerReferenceNo);
 
-    // Basic auth
-    const credentials = Buffer.from(
-      `${process.env.DANA_CLIENT_ID}:${process.env.DANA_CLIENT_SECRET}`
-    ).toString('base64');
+    const headers = buildDanaHeaders();
 
     // DANA API endpoint for status check
     // https://github.com/dana-id/dana-node - POST /v1.0/emoney/transfer-bank-status.htm
@@ -298,8 +333,7 @@ async function checkDisbursementStatus(partnerReferenceNo) {
     
     const endpoints = [
       `${baseUrl}/v1.0/emoney/transfer-bank-status.htm`,  // Official endpoint
-      `${baseUrl}/v1/emoney/transfer-bank-status.htm`,    // Alternative
-      `${baseUrl}/v1/disbursements/${partnerReferenceNo}` // Legacy
+      `${baseUrl}/v1/emoney/transfer-bank-status.htm`     // Alternative
     ];
 
     let response = null;
@@ -317,11 +351,9 @@ async function checkDisbursementStatus(partnerReferenceNo) {
           { partnerReferenceNo: partnerReferenceNo },
           {
             headers: {
-              'Authorization': `Basic ${credentials}`,
-              'X-DANA-Merchant-Id': process.env.DANA_MERCHANT_ID,
-              'Content-Type': 'application/json'
+              ...headers
             },
-            timeout: 15000
+            timeout: 8000
           }
         );
 
