@@ -303,12 +303,25 @@ async function createDisbursement(withdrawalData) {
         
       } catch (err) {
         lastError = err;
-        console.warn(`⚠️  Endpoint ${endpoint.url} failed: HTTP ${err.response?.status}`);
-        console.warn(`⚠️  Error Response:`, {
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          data: JSON.stringify(err.response?.data, null, 2)
-        });
+        console.error(`❌ Endpoint ${endpoint.url} failed: HTTP ${err.response?.status || 'NO_RESPONSE'}`);
+        console.error(`❌ Error Type: ${err.code || err.name}`);
+        console.error(`❌ Error Message: ${err.message}`);
+        
+        if (err.response) {
+          console.error(`❌ Response Status: ${err.response.status} ${err.response.statusText}`);
+          console.error(`❌ Response Headers:`, JSON.stringify(err.response.headers, null, 2));
+          console.error(`❌ Response Data:`, JSON.stringify(err.response.data, null, 2));
+        } else if (err.request) {
+          console.error(`❌ No response received. Request was made but no response.`);
+          console.error(`❌ Request details:`, {
+            method: err.config?.method,
+            url: err.config?.url,
+            timeout: err.config?.timeout
+          });
+        } else {
+          console.error(`❌ Error setting up request:`, err.message);
+        }
+        
         // Continue to next endpoint
       }
     }
