@@ -285,19 +285,11 @@ async function createDisbursement(withdrawalData) {
     // Get bank code for beneficiary
     const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
     
-    // Format phone to strict 628xxxx format (DANA requirement)
-    let customerNumber = (withdrawalData.phone || '').toString().replace(/\D/g, '');
-    if (customerNumber.startsWith('0')) {
-      customerNumber = `62${customerNumber.slice(1)}`;
-    } else if (customerNumber.startsWith('8')) {
-      customerNumber = `62${customerNumber}`;
-    }
-
-    if (!/^628\d+$/.test(customerNumber)) {
-      throw new Error(`Invalid driver phone format for customerNumber: ${withdrawalData.phone}`);
-    }
-
-    console.log(`📱 Using DANA customerNumber from driver phone: ${customerNumber}`);
+    // customerNumber = DANA merchant account number (NOT driver phone!)
+    // This is the source account for disbursement (merchant deposit account)
+    const customerNumber = getDanaCustomerNumber(); // Uses DANA_MERCHANT_ID from env
+    
+    console.log(`💼 Using DANA customerNumber (merchant account): ${customerNumber}`);
     
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
