@@ -8,13 +8,22 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 function getWibTimestamp() {
-  const now = new Date();
-  const wibMs = now.getTime() + (7 * 60 * 60 * 1000);
-  const wibDate = new Date(wibMs);
-  // DANA requires exact format: YYYY-MM-DDTHH:mm:ss+07:00 (25 chars, NO milliseconds)
-  const isoString = wibDate.toISOString();
-  const withoutMs = isoString.split('.')[0]; // Remove .123Z part
-  return `${withoutMs}+07:00`;
+  // Get current UTC time
+  const utcNow = new Date();
+  
+  // Create WIB time by adding 7 hours offset
+  const wibTime = new Date(utcNow.getTime() + (7 * 60 * 60 * 1000));
+  
+  // Format as YYYY-MM-DDTHH:mm:ss+07:00 (25 characters exactly)
+  // We need to use UTC methods on the wibTime since it's already epoch with offset
+  const year = wibTime.getUTCFullYear();
+  const month = String(wibTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(wibTime.getUTCDate()).padStart(2, '0');
+  const hours = String(wibTime.getUTCHours()).padStart(2, '0');
+  const minutes = String(wibTime.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(wibTime.getUTCSeconds()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
 }
 
 function getDanaPartnerId() {
