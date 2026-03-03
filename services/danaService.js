@@ -286,18 +286,23 @@ async function createDisbursement(withdrawalData) {
     const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
     
     // customerNumber = DANA customer account for the disbursement source
-    // For disbursement (merchant sends money), use configured customer number or test number
     // Format must be 628xxx (Indonesia mobile phone format)
-    let customerNumber = process.env.DANA_CUSTOMER_NUMBER || process.env.DANA_MERCHANT_ID || '';
+    // Use configured DANA_CUSTOMER_NUMBER or default to merchant's customer number
+    let customerNumber = process.env.DANA_CUSTOMER_NUMBER || '085128031956';
     
-    // If merchant ID doesn't start with 628, use test customer number
-    if (!/^628\d+$/.test(customerNumber)) {
-      // Use DANA's test customer number from their documentation
-      customerNumber = '6281773628883'; // Test number from DANA integration guide
-      console.log(`⚠️  Using test customerNumber for sandbox: ${customerNumber}`);
-    } else {
-      console.log(`💼 Using configured customerNumber: ${customerNumber}`);
+    // Format to 628xxx if needed
+    customerNumber = customerNumber.replace(/\D/g, ''); // Remove non-digits
+    if (customerNumber.startsWith('0')) {
+      customerNumber = `62${customerNumber.slice(1)}`;
+    } else if (customerNumber.startsWith('8')) {
+      customerNumber = `62${customerNumber}`;
     }
+    
+    if (!/^628\d+$/.test(customerNumber)) {
+      throw new Error(`Invalid customerNumber format: ${customerNumber} (must be 628xxx)`);
+    }
+    
+    console.log(`💼 Using DANA customerNumber: ${customerNumber}`);
     
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
