@@ -11,7 +11,10 @@ function getWibTimestamp() {
   const now = new Date();
   const wibMs = now.getTime() + (7 * 60 * 60 * 1000);
   const wibDate = new Date(wibMs);
-  return `${wibDate.toISOString().replace('Z', '')}+07:00`;
+  // DANA requires exact format: YYYY-MM-DDTHH:mm:ss+07:00 (25 chars, NO milliseconds)
+  const isoString = wibDate.toISOString();
+  const withoutMs = isoString.split('.')[0]; // Remove .123Z part
+  return `${withoutMs}+07:00`;
 }
 
 function getDanaPartnerId() {
@@ -377,6 +380,28 @@ async function createDisbursement(withdrawalData) {
         
         console.log(`📝 DANA Response Data:`, JSON.stringify(response.data, null, 2));
         console.log(`📝 Response Keys:`, Object.keys(response.data || {}));
+        
+        // Validate response is not empty
+        if (typeof response.data === 'string' && response.data.length === 0) {
+          console.warn(`⚠️  Endpoint returned empty string, trying next endpoint...`);
+          const emptyError = new Error('Empty response from DANA endpoint');
+          emptyError.danaMeta = {
+            stage: 'response_validation',
+            endpoint: endpoint.path,
+            httpStatus: response.status,
+            code: 'EMPTY_RESPONSE',
+            message: 'DANA returned empty string',
+            raw: '(empty string)'
+          };
+          throw emptyError;
+        }
+        
+        // Validate response has expected structure
+        if (typeof response.data === 'object' && response.data !== null && 
+            !response.data.responseCode && !response.data.resultInfo?.resultCode) {
+          console.warn(`⚠️  Response missing responseCode, structure might be invalid`);
+        }
+        
         break; // Success! Stop trying other endpoints
         
       } catch (err) {
