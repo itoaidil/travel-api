@@ -156,6 +156,17 @@ function buildDanaHeaders(method, relativePath, body) {
     'Content-Type': 'application/json'
   };
 
+  // Optional SNAP headers (set via env when required by DANA environment)
+  if (process.env.DANA_ORIGIN) {
+    headers['ORIGIN'] = process.env.DANA_ORIGIN;
+  }
+  if (process.env.DANA_IP_ADDRESS) {
+    headers['X-IP-ADDRESS'] = process.env.DANA_IP_ADDRESS;
+  }
+  if (process.env.DANA_DEVICE_ID) {
+    headers['X-DEVICE-ID'] = process.env.DANA_DEVICE_ID;
+  }
+
   // Bearer token is OPTIONAL (only for symmetric signature)
   if (bearerToken) {
     headers['Authorization'] = `Bearer ${bearerToken}`;
@@ -264,11 +275,24 @@ async function createDisbursement(withdrawalData) {
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
     
-    // Prepare disbursement payload - UPDATED per DANA IT requirements
+    const beneficiaryAccountNumber = (
+      process.env.DANA_BENEFICIARY_ACCOUNT_NUMBER ||
+      withdrawalData.bank_account_number ||
+      ''
+    ).toString().replace(/\s+/g, '');
+
+    if (!beneficiaryAccountNumber) {
+      throw new Error('Missing beneficiary account number for DANA transfer');
+    }
+
+    const beneficiaryAccountName = (withdrawalData.bank_account_holder || '').toString().trim();
+
+    // Prepare disbursement payload aligned with DANA transfer-to-bank guide
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
       customerNumber: customerNumber,  // ✅ Phone format 628xxxx
-      beneficiaryAccountNumber: '2460888509', // ✅ DANA testing account
+      accountType: process.env.DANA_ACCOUNT_TYPE || 'SETTLEMENT_ACCOUNT',
+      beneficiaryAccountNumber: beneficiaryAccountNumber,
       beneficiaryBankCode: beneficiaryBankCode,
       amount: {
         value: amountValue,  // ✅ With .00 format
@@ -276,9 +300,11 @@ async function createDisbursement(withdrawalData) {
       },
       additionalInfo: {
         fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
-        needNotify: true
+        externalDivisionId: process.env.DANA_EXTERNAL_DIVISION_ID || '91080916Division',
+        chargeTarget: process.env.DANA_CHARGE_TARGET || 'DIVISION',
+        needNotify: (process.env.DANA_NEED_NOTIFY || 'true').toString(),
+        beneficiaryAccountName: beneficiaryAccountName || undefined
       }
-      // ✅ Removed: beneficiaryAccountName, description
     };
 
     // DANA API endpoint - latest spec
