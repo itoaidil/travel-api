@@ -340,7 +340,12 @@ async function createDisbursement(withdrawalData) {
 
     console.log(`💸 Trying DANA transfer-to-bank with ${endpoints.length} endpoint variants...`);
     console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
-    console.log(`📋 Request Headers:`, {
+    console.log(`� Timestamp Details:`, {
+      full: headers['X-TIMESTAMP'],
+      length: headers['X-TIMESTAMP']?.length,
+      format: 'YYYY-MM-DDTHH:mm:ss+07:00'
+    });
+    console.log(`�📋 Request Headers:`, {
       ...headers,
       'X-SIGNATURE': headers['X-SIGNATURE'] ? headers['X-SIGNATURE'].substring(0, 30) + '...' : 'missing',
       'Authorization': maskAuthHeader(headers['Authorization'])
