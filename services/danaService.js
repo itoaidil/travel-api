@@ -314,6 +314,25 @@ async function createDisbursement(withdrawalData) {
 
     const beneficiaryAccountName = (withdrawalData.bank_account_holder || '').toString().trim();
 
+    // Build additionalInfo - only include fields that are configured
+    const additionalInfo = {
+      fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
+      needNotify: (process.env.DANA_NEED_NOTIFY || 'true').toString(),
+      beneficiaryAccountName: beneficiaryAccountName || undefined
+    };
+    
+    // Only add chargeTarget and externalDivisionId if explicitly configured
+    // By default, chargeTarget: MERCHANT (does NOT require externalDivisionId)
+    const chargeTarget = process.env.DANA_CHARGE_TARGET || 'MERCHANT';
+    if (chargeTarget) {
+      additionalInfo.chargeTarget = chargeTarget;
+    }
+    
+    // Only add externalDivisionId if configured AND chargeTarget is DIVISION
+    if (process.env.DANA_EXTERNAL_DIVISION_ID && chargeTarget === 'DIVISION') {
+      additionalInfo.externalDivisionId = process.env.DANA_EXTERNAL_DIVISION_ID;
+    }
+
     // Prepare disbursement payload aligned with DANA transfer-to-bank guide
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
@@ -325,13 +344,7 @@ async function createDisbursement(withdrawalData) {
         value: amountValue,  // ✅ With .00 format
         currency: 'IDR'
       },
-      additionalInfo: {
-        fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
-        externalDivisionId: process.env.DANA_EXTERNAL_DIVISION_ID || '91080916Division',
-        chargeTarget: process.env.DANA_CHARGE_TARGET || 'DIVISION',
-        needNotify: (process.env.DANA_NEED_NOTIFY || 'true').toString(),
-        beneficiaryAccountName: beneficiaryAccountName || undefined
-      }
+      additionalInfo: additionalInfo
     };
 
     // DANA API endpoint - latest spec
