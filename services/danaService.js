@@ -141,6 +141,8 @@ function generateDanaSignature(method, relativePath, body, timestamp) {
   console.log('  Path:', relativePath);
   console.log('  Body SHA256:', bodyHash);
   console.log('  Timestamp:', timestamp);
+  console.log('  Timestamp length:', timestamp.length);
+  console.log('  Timestamp format valid:', timestamp.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+07:00$/) ? '✅' : '❌');
   console.log('  String to sign:', stringToSign);
   
   try {
