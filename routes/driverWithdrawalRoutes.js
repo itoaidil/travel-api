@@ -157,20 +157,22 @@ router.post('/request', async (req, res) => {
             [danaResult.partnerReferenceNo, danaResult.disbursementId, danaResult.status, withdrawalId]
           );
         } else {
-          const failureReason = danaResult.error ||
+          const failureReason = danaResult.failureReason ||
+                               danaResult.error ||
                                danaResult.errorMessage ||
                                (danaResult.responseCode ? `DANA responseCode ${danaResult.responseCode}` : null) ||
                                (danaResult.response ? JSON.stringify(danaResult.response) : null) ||
                                'DANA transfer failed without detailed message';
+          const safeFailureReason = String(failureReason).slice(0, 1000);
 
-          console.error(`❌ DANA transfer failed for withdrawal ${withdrawalId}:`, failureReason);
+          console.error(`❌ DANA transfer failed for withdrawal ${withdrawalId}:`, safeFailureReason);
           // If DANA fails, store error but keep as processing (can retry later)
           await db.query(
             `UPDATE driver_withdrawals 
              SET dana_failure_reason = ?,
                  dana_status = 'FAILED_INITIAL'
              WHERE id = ?`,
-            [failureReason, withdrawalId]
+            [safeFailureReason, withdrawalId]
           );
         }
       } catch (error) {

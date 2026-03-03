@@ -27,6 +27,39 @@ function buildExternalId() {
   return seed.slice(0, 18);
 }
 
+function previewText(value, maxLen = 240) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+}
+
+function maskAuthHeader(authHeader) {
+  if (!authHeader) {
+    return undefined;
+  }
+
+  const raw = String(authHeader);
+  if (raw.length <= 20) {
+    return '***';
+  }
+
+  return `${raw.slice(0, 12)}***${raw.slice(-6)}`;
+}
+
+function buildFailureReason(details = {}) {
+  const stage = details.stage || 'unknown';
+  const endpoint = details.endpoint || '-';
+  const http = details.httpStatus !== undefined && details.httpStatus !== null ? details.httpStatus : '-';
+  const code = details.code || '-';
+  const msg = previewText(details.message || '-', 120).replace(/\|/g, '/');
+  const raw = previewText(details.raw || '-', 160).replace(/\|/g, '/');
+
+  return `DANA_FAIL|stage=${stage}|endpoint=${endpoint}|http=${http}|code=${code}|msg=${msg}|raw=${raw}`;
+}
+
 function normalizePrivateKey(rawKey) {
   if (!rawKey) {
     return '';
@@ -271,7 +304,8 @@ async function createDisbursement(withdrawalData) {
     console.log(`📋 Request Body:`, JSON.stringify(payload, null, 2));
     console.log(`📋 Request Headers:`, {
       ...headers,
-      'X-SIGNATURE': headers['X-SIGNATURE'] ? headers['X-SIGNATURE'].substring(0, 30) + '...' : 'missing'
+      'X-SIGNATURE': headers['X-SIGNATURE'] ? headers['X-SIGNATURE'].substring(0, 30) + '...' : 'missing',
+      'Authorization': maskAuthHeader(headers['Authorization'])
     });
 
     // Try each endpoint until one works
@@ -302,6 +336,26 @@ async function createDisbursement(withdrawalData) {
         break; // Success! Stop trying other endpoints
         
       } catch (err) {
+        const endpointCode = err.response?.data?.responseCode ||
+                            err.response?.data?.resultInfo?.resultCode ||
+                            err.response?.data?.errorCode;
+        const endpointMessage = err.response?.data?.responseMessage ||
+                               err.response?.data?.resultInfo?.resultMsg ||
+                               err.response?.data?.errorMessage ||
+                               err.response?.data?.message ||
+                               err.message;
+        const endpointRaw = err.response?.data || err.message;
+
+        err.danaMeta = {
+          stage: 'request_send',
+          endpoint: endpoint.path,
+          httpStatus: err.response?.status,
+          code: endpointCode,
+          message: endpointMessage,
+          raw: endpointRaw,
+          errorType: err.code || err.name
+        };
+
         lastError = err;
         console.error(`❌ Endpoint ${endpoint.url} failed: HTTP ${err.response?.status || 'NO_RESPONSE'}`);
         console.error(`❌ Error Type: ${err.code || err.name}`);
@@ -380,6 +434,15 @@ async function createDisbursement(withdrawalData) {
                           danaData?.message ||
                           (responseCode ? `DANA request failed with responseCode ${responseCode}` : `DANA request failed - unexpected response: ${rawResponsePreview}`);
 
+    const failureReason = buildFailureReason({
+      stage: 'response_parse',
+      endpoint: relativePath,
+      httpStatus: response.status,
+      code: responseCode,
+      message: failureMessage,
+      raw: rawResponsePreview
+    });
+
     return {
       success: isSuccess,
       disbursementId: disbursementId,  // ✅ Can be null - callback will update it
@@ -388,17 +451,31 @@ async function createDisbursement(withdrawalData) {
       responseCode: responseCode,
       response: response.data,
       error: isSuccess ? null : failureMessage,
-      errorCode: isSuccess ? null : responseCode
+      errorCode: isSuccess ? null : responseCode,
+      failureReason: isSuccess ? null : failureReason
     };
 
   } catch (error) {
     // Extract DANA error message from response
-    const danaErrorCode = error.response?.data?.errorCode || error.response?.data?.responseCode;
+    const danaErrorCode = error.danaMeta?.code ||
+                         error.response?.data?.errorCode ||
+                         error.response?.data?.responseCode;
     const danaErrorMsg = error.response?.data?.errorMessage || 
                         error.response?.data?.responseMessage || 
                         error.response?.data?.message || 
+                        error.danaMeta?.message ||
                         error.message;
-    const statusCode = error.response?.status;
+    const statusCode = error.danaMeta?.httpStatus || error.response?.status;
+    const endpointPath = error.danaMeta?.endpoint || relativePath;
+    const rawFailureData = error.danaMeta?.raw || error.response?.data || error.message;
+    const failureReason = buildFailureReason({
+      stage: error.danaMeta?.stage || 'request_send',
+      endpoint: endpointPath,
+      httpStatus: statusCode,
+      code: danaErrorCode,
+      message: danaErrorMsg,
+      raw: rawFailureData
+    });
     
     // Special handling for gateway errors (DANA sandbox down)
     if (statusCode === 502 || statusCode === 504) {
@@ -413,7 +490,8 @@ async function createDisbursement(withdrawalData) {
         errorMessage: `DANA sandbox is currently unavailable (${statusCode}). Please try again later.`,
         errorCode: 'SERVICE_UNAVAILABLE',
         statusCode: statusCode,
-        retryable: true
+        retryable: true,
+        failureReason: failureReason
       };
     }
     
@@ -430,7 +508,8 @@ async function createDisbursement(withdrawalData) {
       error: danaErrorMsg || 'DANA API Error',
       errorCode: danaErrorCode || statusCode || 'UNKNOWN_ERROR',
       statusCode: statusCode,
-      retryable: false
+      retryable: false,
+      failureReason: failureReason
     };
   }
 }
