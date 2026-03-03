@@ -8,14 +8,20 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 function getWibTimestamp() {
-  // Get current UTC time
-  const utcNow = new Date();
+  // Get current local date/time
+  const now = new Date();
   
-  // Create WIB time by adding 7 hours offset
-  const wibTime = new Date(utcNow.getTime() + (7 * 60 * 60 * 1000));
+  // Get local timezone offset in milliseconds
+  const localOffsetMs = now.getTimezoneOffset() * 60 * 1000;
+  
+  // Convert to UTC first
+  const utcTime = new Date(now.getTime() + localOffsetMs);
+  
+  // Add 7 hours for Jakarta (GMT+7)
+  const wibTime = new Date(utcTime.getTime() + (7 * 60 * 60 * 1000));
   
   // Format as YYYY-MM-DDTHH:mm:ss+07:00 (25 characters exactly)
-  // We need to use UTC methods on the wibTime since it's already epoch with offset
+  // Using UTC methods since wibTime is already in the right epoch offset
   const year = wibTime.getUTCFullYear();
   const month = String(wibTime.getUTCMonth() + 1).padStart(2, '0');
   const day = String(wibTime.getUTCDate()).padStart(2, '0');
@@ -23,7 +29,14 @@ function getWibTimestamp() {
   const minutes = String(wibTime.getUTCMinutes()).padStart(2, '0');
   const seconds = String(wibTime.getUTCSeconds()).padStart(2, '0');
   
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
+  const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
+  
+  // Verify format (must be exactly 25 characters)
+  if (timestamp.length !== 25) {
+    console.warn(`⚠️  Timestamp length is ${timestamp.length}, expected 25: ${timestamp}`);
+  }
+  
+  return timestamp;
 }
 
 function getDanaPartnerId() {
