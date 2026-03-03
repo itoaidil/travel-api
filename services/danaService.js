@@ -334,8 +334,14 @@ async function createDisbursement(withdrawalData) {
     // DANA response format (latest):
     // 2004300 => Successful
     // 2024300 => Request In Progress
-    const responseCode = response.data?.responseCode;
-    const responseMessage = response.data?.responseMessage;
+    const responseCode = response.data?.responseCode ||
+              response.data?.resultInfo?.resultCode ||
+              response.data?.resultCode ||
+              response.data?.code;
+    const responseMessage = response.data?.responseMessage ||
+                 response.data?.resultInfo?.resultMsg ||
+                 response.data?.resultMsg ||
+                 response.data?.message;
     const danaData = response.data?.data || response.data;
     
     console.log(`📊 DANA Response Code: ${responseCode}`);
@@ -365,10 +371,14 @@ async function createDisbursement(withdrawalData) {
     });
 
     const isSuccess = responseCode === '2004300' || responseCode === '2024300';
+    const rawResponsePreview = typeof response.data === 'string'
+      ? response.data.slice(0, 240)
+      : JSON.stringify(response.data || {}).slice(0, 240);
+
     const failureMessage = responseMessage ||
                           danaData?.errorMessage ||
                           danaData?.message ||
-                          (responseCode ? `DANA request failed with responseCode ${responseCode}` : 'DANA request failed');
+                          (responseCode ? `DANA request failed with responseCode ${responseCode}` : `DANA request failed - unexpected response: ${rawResponsePreview}`);
 
     return {
       success: isSuccess,
