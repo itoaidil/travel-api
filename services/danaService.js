@@ -357,6 +357,24 @@ async function createDisbursement(withdrawalData) {
           'content-type': response.headers['content-type'],
           'x-dana-signature': response.headers['x-dana-signature'] ? '***' : 'none'
         });
+        
+        // Enhanced response diagnostics
+        console.log(`🔍 Response Type Analysis:`);
+        console.log(`  - Type: ${typeof response.data}`);
+        console.log(`  - Is null: ${response.data === null}`);
+        console.log(`  - Is undefined: ${response.data === undefined}`);
+        console.log(`  - Is Array: ${Array.isArray(response.data)}`);
+        
+        if (typeof response.data === 'string') {
+          console.log(`  - String length: ${response.data.length}`);
+          console.log(`  - First 500 chars: ${response.data.substring(0, 500)}`);
+        } else if (typeof response.data === 'object' && response.data !== null) {
+          const dataStr = JSON.stringify(response.data);
+          console.log(`  - JSON string length: ${dataStr.length}`);
+          console.log(`  - Object keys: ${Object.keys(response.data).join(', ') || '(no keys)'}`);
+          console.log(`  - Object entries count: ${Object.keys(response.data).length}`);
+        }
+        
         console.log(`📝 DANA Response Data:`, JSON.stringify(response.data, null, 2));
         console.log(`📝 Response Keys:`, Object.keys(response.data || {}));
         break; // Success! Stop trying other endpoints
