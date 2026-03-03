@@ -364,13 +364,21 @@ async function createDisbursement(withdrawalData) {
       status: status
     });
 
+    const isSuccess = responseCode === '2004300' || responseCode === '2024300';
+    const failureMessage = responseMessage ||
+                          danaData?.errorMessage ||
+                          danaData?.message ||
+                          (responseCode ? `DANA request failed with responseCode ${responseCode}` : 'DANA request failed');
+
     return {
-      success: responseCode === '2004300' || responseCode === '2024300',
+      success: isSuccess,
       disbursementId: disbursementId,  // ✅ Can be null - callback will update it
       partnerReferenceNo: partnerReferenceNo,
       status: status,
       responseCode: responseCode,
-      response: response.data
+      response: response.data,
+      error: isSuccess ? null : failureMessage,
+      errorCode: isSuccess ? null : responseCode
     };
 
   } catch (error) {
