@@ -285,11 +285,19 @@ async function createDisbursement(withdrawalData) {
     // Get bank code for beneficiary
     const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
     
-    // customerNumber = DANA merchant account number (NOT driver phone!)
-    // This is the source account for disbursement (merchant deposit account)
-    const customerNumber = getDanaCustomerNumber(); // Uses DANA_MERCHANT_ID from env
+    // customerNumber = DANA customer account for the disbursement source
+    // For disbursement (merchant sends money), use configured customer number or test number
+    // Format must be 628xxx (Indonesia mobile phone format)
+    let customerNumber = process.env.DANA_CUSTOMER_NUMBER || process.env.DANA_MERCHANT_ID || '';
     
-    console.log(`💼 Using DANA customerNumber (merchant account): ${customerNumber}`);
+    // If merchant ID doesn't start with 628, use test customer number
+    if (!/^628\d+$/.test(customerNumber)) {
+      // Use DANA's test customer number from their documentation
+      customerNumber = '6281773628883'; // Test number from DANA integration guide
+      console.log(`⚠️  Using test customerNumber for sandbox: ${customerNumber}`);
+    } else {
+      console.log(`💼 Using configured customerNumber: ${customerNumber}`);
+    }
     
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
