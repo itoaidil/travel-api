@@ -27,6 +27,7 @@ router.post('/delivery/create', async (req, res) => {
   try {
     const {
       customer_id,
+      service_type,
       vehicle_type,
       pickup_address,
       dropoff_address,
@@ -49,6 +50,7 @@ router.post('/delivery/create', async (req, res) => {
 
     console.log('📦 Creating delivery booking:', {
       customer_id,
+      service_type,
       vehicle_type,
       pickup_address: pickup_address?.substring(0, 50),
       dropoff_address: dropoff_address?.substring(0, 50),
@@ -123,11 +125,13 @@ router.post('/delivery/create', async (req, res) => {
       bookingStatus = 'pending';
     }
 
-    // Determine booking_type based on vehicle and item
-    // If motorcycle without item_type -> it's a ride (instant ride motor)
-    // If has item_type -> it's a delivery (antar paket)
+    // Determine booking_type with explicit service type support.
+    // Priority: service_type=cargo -> cargo.
+    // Fallback: motorcycle without item_type -> ride, else delivery.
     let actualBookingType = 'delivery'; // default for antar paket
-    if (vehicle_type === 'motorcycle' && !item_type) {
+    if (service_type === 'cargo') {
+      actualBookingType = 'cargo';
+    } else if (vehicle_type === 'motorcycle' && !item_type) {
       actualBookingType = 'ride'; // instant ride motor/passenger
     }
 
@@ -183,7 +187,7 @@ router.post('/delivery/create', async (req, res) => {
 
     const [result] = await db.query(insertQuery, [
       bookingCode,           // 1
-      actualBookingType,     // 2 - 'ride' or 'delivery'
+      actualBookingType,     // 2 - 'ride', 'delivery', or 'cargo'
       customer_id,           // 3
       customerName,          // 4
       customerPhone,         // 5
@@ -413,8 +417,8 @@ router.get('/:booking_id', async (req, res) => {
         created_at,
         updated_at
       FROM independent_bookings
-      WHERE id = ?`,
-      [bookingId]
+      WHERE id = ? OR booking_code = ?`,
+      [bookingId, bookingId]
     );
 
     if (bookings.length === 0) {
@@ -486,8 +490,8 @@ router.get('/delivery/:booking_id', async (req, res) => {
         created_at,
         updated_at
       FROM independent_bookings
-      WHERE id = ?`,
-      [bookingId]
+      WHERE id = ? OR booking_code = ?`,
+      [bookingId, bookingId]
     );
 
     if (bookings.length === 0) {
