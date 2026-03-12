@@ -234,6 +234,7 @@ router.get('/bookings/:customer_id', async (req, res) => {
         booking_type,
         customer_id,
         customer_name,
+        customer_phone,
         driver_id,
         driver_name,
         pickup_lat,
