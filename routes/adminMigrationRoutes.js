@@ -202,4 +202,33 @@ router.post('/migrate-014', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-015
+ * Add batch_code generated column to batch_deliveries (BATCH-0001 format).
+ */
+router.post('/migrate-015', async (req, res) => {
+  try {
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'batch_code'
+    `);
+    if (cols.length > 0) {
+      return res.json({ success: true, message: 'Kolom batch_code sudah ada', already_exists: true });
+    }
+    await db.query(`
+      ALTER TABLE batch_deliveries
+      ADD COLUMN batch_code VARCHAR(20)
+        AS (CONCAT('BATCH-', LPAD(id, 4, '0'))) STORED
+        AFTER penerima
+    `);
+    console.log('✅ batch_deliveries.batch_code generated column added');
+    return res.json({ success: true, message: 'Kolom batch_code berhasil ditambahkan' });
+  } catch (error) {
+    console.error('❌ Migration 015 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;

@@ -108,7 +108,7 @@ router.get('/driver/:driverId', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
-              penerima, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
+              penerima, batch_code, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -265,7 +265,7 @@ router.get('/list', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
-              penerima, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
+              penerima, batch_code, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -296,7 +296,7 @@ router.get('/track/:npp', async (req, res) => {
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address,
               lat, lng, wave, driver_id, status,
-              penerima, delivery_photo_url, driver_notes,
+              penerima, batch_code, delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries WHERE npp = ?`,
       [npp]
