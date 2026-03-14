@@ -23,8 +23,8 @@ if (EMAIL_MODE === 'production') {
   } else {
     transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // true for 465, false for other ports
+      port: 465,
+      secure: true, // port 465 uses SSL directly (more reliable on Railway)
       auth: {
         user: EMAIL_USER,
         pass: EMAIL_APP_PASSWORD
@@ -32,7 +32,7 @@ if (EMAIL_MODE === 'production') {
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 30000, // 30 seconds
+      connectionTimeout: 30000,
       greetingTimeout: 30000,
       socketTimeout: 30000
     });
