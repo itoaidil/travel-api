@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { uploadDriverPhoto } = require('../config/cloudinary');
+const { generateRandomPassword, sendDriverPasswordEmail } = require('../services/emailService');
 
 /**
  * POST /api/driver-auth/upload-photo
@@ -55,15 +56,14 @@ router.post('/register', async (req, res) => {
       vehicleType, vehicleColor, vehicleYear, vehiclePlate,
       bankName, accountNumber, accountName,
       ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl, stnkPhotoUrl, 
-      licenseNumber, stnkNumber,
-      password
+      licenseNumber, stnkNumber
     } = req.body;
 
     // Validate required fields
-    if (!phone || !fullName || !password) {
+    if (!phone || !fullName) {
       return res.status(400).json({
         success: false,
-        message: 'Phone, full name, and password are required'
+        message: 'Phone and full name are required'
       });
     }
 
@@ -92,13 +92,6 @@ router.post('/register', async (req, res) => {
           message: 'SIM photo, STNK photo, and STNK number are required for motor vehicles'
         });
       }
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters'
-      });
     }
 
     const db = req.db;
@@ -144,8 +137,9 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Generate random password and hash it
+    const plainPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     // 1. Create user account first
     const [userResult] = await db.query(
@@ -188,12 +182,19 @@ router.post('/register', async (req, res) => {
 
     const driverId = driverResult.insertId;
 
+    // Send password to driver's email (non-blocking)
+    const emailSent = email ? await sendDriverPasswordEmail(email, fullName, plainPassword) : false;
+    if (!emailSent && email) {
+      console.warn(`⚠️  Password email not sent to driver ${email} (driver_id: ${driverId}). Password: ${plainPassword}`);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Registration successful! Admin will review your request within 24 hours.',
+      message: 'Registration successful! Admin will review your request within 24 hours.' + (emailSent ? ' Password has been sent to your email.' : ''),
       user_id: userId,
       driver_id: driverId,
-      status: 'pending'
+      status: 'pending',
+      email_sent: emailSent
     });
 
   } catch (error) {
