@@ -317,4 +317,40 @@ router.get('/track/:npp', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/batch-delivery/customer/:customerId
+ * Returns paginated batch deliveries for a specific customer (for landing page grid).
+ */
+router.get('/customer/:customerId', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { customerId } = req.params;
+    const { page = 1, limit = 20, status } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = ['customer_id = ?'];
+    const params = [customerId];
+    if (status) { where.push('status = ?'); params.push(status); }
+    const whereClause = 'WHERE ' + where.join(' AND ');
+
+    const [rows] = await db.query(
+      `SELECT id, row_no, npp, batch_code, penerima, recipient_address,
+              lat, lng, status, delivery_photo_url, driver_notes,
+              assigned_at, delivered_at, updated_at
+       FROM batch_deliveries ${whereClause}
+       ORDER BY CAST(row_no AS UNSIGNED) ASC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
+    );
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total FROM batch_deliveries ${whereClause}`,
+      params
+    );
+    res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

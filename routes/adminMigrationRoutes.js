@@ -235,4 +235,40 @@ router.post('/migrate-015', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-016
+ * Add customer_id column to batch_deliveries and set existing rows to customer_id=29.
+ */
+router.post('/migrate-016', async (req, res) => {
+  try {
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'customer_id'
+    `);
+    if (cols.length === 0) {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN customer_id INT NULL AFTER batch_code,
+        ADD INDEX idx_customer (customer_id)
+      `);
+      console.log('✅ batch_deliveries.customer_id column added');
+    }
+    // Assign all existing rows to customer_id=29
+    const [result] = await db.query(
+      `UPDATE batch_deliveries SET customer_id = 29 WHERE customer_id IS NULL`
+    );
+    console.log(`✅ Updated ${result.affectedRows} rows with customer_id=29`);
+    return res.json({
+      success: true,
+      message: 'Kolom customer_id ditambahkan dan semua baris di-assign ke customer_id=29',
+      rows_updated: result.affectedRows
+    });
+  } catch (error) {
+    console.error('❌ Migration 016 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;
