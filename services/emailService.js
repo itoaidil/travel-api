@@ -9,7 +9,7 @@ const { Resend } = require('resend');
 const EMAIL_MODE = process.env.EMAIL_MODE || 'testing'; // 'testing' or 'production'
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar Travel <noreply@primarylineindo.com>';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar <noreply@primarylineindo.com>';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
@@ -59,7 +59,7 @@ function generateRandomPassword() {
  */
 async function sendOTPEmail(email, otpCode) {
   try {
-    const emailSubject = 'Kode Verifikasi Hantar Travel';
+    const emailSubject = 'Kode Verifikasi Hantar';
     const emailHTML = `
 <!DOCTYPE html>
 <html>
@@ -139,7 +139,7 @@ async function sendOTPEmail(email, otpCode) {
       <p style="font-size: 16px; color: #333;">Halo,</p>
       
       <p style="font-size: 16px; color: #555; line-height: 1.6;">
-        Terima kasih telah mendaftar di <strong>Hantar Travel</strong>. 
+        Terima kasih telah mendaftar di <strong>Hantar</strong>. 
         Gunakan kode OTP di bawah ini untuk memverifikasi akun Anda:
       </p>
       
