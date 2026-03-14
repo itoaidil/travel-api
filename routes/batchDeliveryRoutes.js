@@ -3,112 +3,44 @@ const router = express.Router();
 
 /**
  * POST /api/batch-delivery/import
- * Import an array of geocoded addresses into independent_bookings
- * Body: { packages: [{ no, npp, address, lat, lng }], customer_id: 1 }
+ * Bulk insert geocoded addresses into batch_deliveries table.
+ * Body: { packages: [{ no, npp, address, lat, lng }] }
+ * Skips rows with duplicate NPP (INSERT IGNORE).
  */
 router.post('/import', async (req, res) => {
   const db = req.db;
-  
-  if (!db) {
-    return res.status(500).json({ success: false, message: 'Database not available' });
-  }
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
-    const { packages, customer_id } = req.body;
-    
+    const { packages } = req.body;
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
-      return res.status(400).json({ success: false, message: 'Invalid packages data' });
+      return res.status(400).json({ success: false, message: 'packages array is required' });
     }
-    
-    if (!customer_id) {
-      return res.status(400).json({ success: false, message: 'Customer ID is required' });
-    }
-
-    // Get customer info
-    const [customers] = await db.query(
-      'SELECT full_name, email, phone FROM customers WHERE id = ?',
-      [customer_id]
-    );
-
-    const customer = customers[0] || {};
-    const customerName = customer.full_name || 'Corporate Batch';
-    const customerPhone = customer.phone || '';
-    const customerEmail = customer.email || '';
 
     let successCount = 0;
+    let skippedCount = 0;
     const errors = [];
-    
-    // Default fixed pickup logic for the sender (could be dynamic later)
-    const pickupAddress = "Gudang Utama Operasional";
-    const pickupLat = "-6.200000"; // Example warehouse lat
-    const pickupLng = "106.816666"; // Example warehouse lng
 
     for (const pkg of packages) {
+      if (!pkg.npp) {
+        errors.push({ pkg, error: 'npp is required' });
+        continue;
+      }
       try {
-        const timestamp = Date.now() + Math.floor(Math.random() * 1000);
-        const bookingCode = `BATCH-${pkg.npp || timestamp}`;
-
-        const insertQuery = `
-          INSERT INTO independent_bookings (
-            booking_code,
-            booking_type,
-            customer_id,
-            customer_name,
-            customer_phone,
-            customer_email,
-            vehicle_type,
-            pickup_location,
-            pickup_address,
-            pickup_lat,
-            pickup_lng,
-            dropoff_location,
-            dropoff_address,
-            dropoff_lat,
-            dropoff_lng,
-            recipient_name,
-            recipient_phone,
-            recipient_address_detail,
-            payment_method,
-            payment_status,
-            booking_status,
-            distance_km,
-            total_fare,
-            created_at,
-            updated_at
-          ) VALUES (
-            ?, 'cargo', ?, ?, ?, ?, 
-            'motorcycle', 'Gudang Pusat', ?, ?, ?, 
-            ?, ?, ?, ?, 
-            ?, '', '',
-            'cash', 'unpaid', 'batch_pending',
-            0, 0,
-            NOW(), NOW()
-          )
-        `;
-        
-        // Use NPP as recipient_name for now if actual name isn't provided
-        const recipientName = pkg.npp ? `NPP: ${pkg.npp}` : 'Batch Recipient';
-        
-        await db.query(insertQuery, [
-          bookingCode,
-          customer_id,
-          customerName,
-          customerPhone,
-          customerEmail,
-          pickupAddress,
-          pickupLat,
-          pickupLng,
-          'Alamat Tujuan', // dropoff_location logic
-          pkg.address,
-          pkg.lat || null,
-          pkg.lng || null,
-          recipientName
-        ]);
-        
-        successCount++;
+        const lat = parseFloat(pkg.lat) || 0;
+        const lng = parseFloat(pkg.lng) || 0;
+        const [result] = await db.query(
+          `INSERT IGNORE INTO batch_deliveries (row_no, npp, recipient_address, lat, lng)
+           VALUES (?, ?, ?, ?, ?)`,
+          [pkg.no || null, pkg.npp, pkg.address || '', lat, lng]
+        );
+        if (result.affectedRows === 0) {
+          skippedCount++;
+        } else {
+          successCount++;
+        }
       } catch (err) {
-        console.error('Error inserting batch pkg:', err);
-        errors.push({ pkg, error: err.message });
+        errors.push({ npp: pkg.npp, error: err.message });
       }
     }
 
@@ -116,15 +48,84 @@ router.post('/import', async (req, res) => {
       success: true,
       data: {
         total_received: packages.length,
-        success_count: successCount,
-        error_count: errors.length,
-        errors: errors.slice(0, 10) // Return only first 10 errors for brevity
-      }
+        inserted: successCount,
+        skipped_duplicate: skippedCount,
+        errors: errors.slice(0, 20),
+      },
     });
-
   } catch (error) {
     console.error('Batch import error:', error);
-    res.status(500).json({ success: false, message: 'Server error during batch import', error: error.message });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/stats
+ * Summary: total, per status, koordinat valid vs 0,0
+ */
+router.get('/stats', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const [[totals]] = await db.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(status = 'pending')          AS pending,
+        SUM(status = 'assigned')         AS assigned,
+        SUM(status = 'in_progress')      AS in_progress,
+        SUM(status = 'delivered')        AS delivered,
+        SUM(status = 'not_found')        AS not_found,
+        SUM(status = 'address_mismatch') AS address_mismatch,
+        SUM(status = 'refused')          AS refused,
+        SUM(lat != 0 AND lng != 0)       AS has_coords,
+        SUM(lat = 0 OR  lng = 0)         AS no_coords
+      FROM batch_deliveries
+    `);
+    res.json({ success: true, data: totals });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/list
+ * List packages with optional filters: status, wave, driver_id, no_coords
+ */
+router.get('/list', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { status, wave, driver_id, no_coords, page = 1, limit = 50 } = req.query;
+    const where = [];
+    const params = [];
+
+    if (status)    { where.push('status = ?');    params.push(status); }
+    if (wave)      { where.push('wave = ?');       params.push(wave); }
+    if (driver_id) { where.push('driver_id = ?'); params.push(driver_id); }
+    if (no_coords === '1') { where.push('(lat = 0 OR lng = 0)'); }
+
+    const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const [rows] = await db.query(
+      `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
+              delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
+       FROM batch_deliveries ${whereClause}
+       ORDER BY CAST(row_no AS UNSIGNED) ASC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
+    );
+
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total FROM batch_deliveries ${whereClause}`,
+      params
+    );
+
+    res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

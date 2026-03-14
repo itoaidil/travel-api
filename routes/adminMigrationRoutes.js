@@ -131,4 +131,47 @@ router.post('/migrate/customer-fcm', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-013
+ * Create batch_deliveries table for corporate bulk letter/document delivery.
+ */
+router.post('/migrate-013', async (req, res) => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS batch_deliveries (
+        id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+        row_no        VARCHAR(20)   NULL,
+        npp           VARCHAR(50)   NOT NULL,
+        recipient_address TEXT      NOT NULL,
+        lat           DECIMAL(10,8) NOT NULL DEFAULT 0,
+        lng           DECIMAL(11,8) NOT NULL DEFAULT 0,
+        wave          INT           NULL,
+        driver_id     INT           NULL,
+        status        ENUM(
+                        'pending','assigned','in_progress',
+                        'delivered','not_found','address_mismatch','refused','returned'
+                      ) NOT NULL DEFAULT 'pending',
+        delivery_photo_url VARCHAR(512) NULL,
+        driver_notes  TEXT          NULL,
+        assigned_at   TIMESTAMP     NULL,
+        delivered_at  TIMESTAMP     NULL,
+        created_at    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_npp (npp),
+        INDEX idx_status   (status),
+        INDEX idx_driver   (driver_id),
+        INDEX idx_wave     (wave),
+        FOREIGN KEY fk_bd_driver (driver_id)
+          REFERENCES independent_drivers(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    console.log('✅ batch_deliveries table created');
+    return res.json({ success: true, message: 'batch_deliveries table created successfully' });
+  } catch (error) {
+    console.error('❌ Migration 013 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;
