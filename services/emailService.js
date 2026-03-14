@@ -218,7 +218,7 @@ async function sendOTPEmail(email, otpCode) {
  * @param {string} name - Customer name
  */
 async function sendWelcomeEmail(email, name) {
-  const emailSubject = 'Selamat Datang di Hantar Travel!';
+  const emailSubject = 'Selamat Datang di Hantar!';
   const emailHTML = `
 <!DOCTYPE html>
 <html>
@@ -240,7 +240,7 @@ async function sendWelcomeEmail(email, name) {
     <div class="content">
       <h2>Halo ${name},</h2>
       <p>Akun Anda telah berhasil diverifikasi!</p>
-      <p>Anda sekarang dapat menikmati layanan pengiriman paket dengan Hantar Travel.</p>
+      <p>Anda sekarang dapat menikmati layanan pengiriman paket dengan Hantar.</p>
       <p><strong>Fitur yang tersedia:</strong></p>
       <ul>
         <li>✅ Pesan pengiriman paket online</li>
@@ -250,7 +250,7 @@ async function sendWelcomeEmail(email, name) {
       </ul>
       <p>Terima kasih telah bergabung dengan kami!</p>
       <p style="margin-top: 30px; color: #777; font-size: 14px;">
-        Salam,<br>Tim Hantar Travel
+        Salam,<br>Tim Hantar
       </p>
     </div>
   </div>
