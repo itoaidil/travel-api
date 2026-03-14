@@ -185,7 +185,7 @@ async function sendOTPEmail(email, otpCode) {
       console.log('✅ OTP email sent via SMTP to:', email, '| msgid:', info.messageId);
       return true;
     } catch (error) {
-      console.error('⚠️  SMTP email send failed:', error.message);
+      console.error('⚠️  SMTP email send failed:', error.message, '| code:', error.code || 'N/A');
       // Fall through to Resend
     }
   }
@@ -213,7 +213,13 @@ async function sendOTPEmail(email, otpCode) {
     }
   }
 
-  // Fallback: log to console if no transport available
+  // In production, never mark OTP as sent if both SMTP and Resend are unavailable/failed.
+  if (EMAIL_MODE === 'production') {
+    console.error('❌ OTP email not sent: no working transport (SMTP/Resend) in production mode');
+    return false;
+  }
+
+  // Testing mode fallback: log OTP to console.
   console.log('\n📧 ========== EMAIL OTP (FALLBACK) ==========');
   console.log('To:', email);
   console.log('OTP Code:', otpCode);

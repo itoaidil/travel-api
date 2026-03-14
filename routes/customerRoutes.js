@@ -88,12 +88,15 @@ router.post('/register', async (req, res) => {
     );
 
     // Send OTP email
-    try {
-      await sendOTPEmail(email, otpCode);
+    const otpSent = await sendOTPEmail(email, otpCode);
+    if (otpSent) {
       console.log(`✅ OTP sent to ${email}: ${otpCode}`);
-    } catch (emailError) {
-      console.error('❌ Failed to send OTP email:', emailError);
-      // Continue anyway - user can request resend
+    } else {
+      console.error(`❌ Failed to send OTP email to ${email}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Gagal mengirim OTP email. Silakan coba lagi beberapa saat.'
+      });
     }
 
     // Also create a user record for compatibility (optional)
@@ -501,11 +504,11 @@ router.post('/resend-otp', async (req, res) => {
     );
 
     // Send OTP email
-    try {
-      await sendOTPEmail(email, otpCode);
+    const otpResent = await sendOTPEmail(email, otpCode);
+    if (otpResent) {
       console.log(`✅ OTP resent to ${email}: ${otpCode}`);
-    } catch (emailError) {
-      console.error('❌ Failed to resend OTP email:', emailError);
+    } else {
+      console.error(`❌ Failed to resend OTP email to ${email}`);
       return res.status(500).json({
         success: false,
         message: 'Gagal mengirim email. Silakan coba lagi.'
