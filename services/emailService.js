@@ -1,4 +1,3 @@
-const nodemailer = require('nodemailer');
 const { Resend } = require('resend');
 
 /**
@@ -14,30 +13,14 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'Hantar Travel <noreply@primaryline
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
-// Create email transporter (only for production mode)
-let transporter = null;
-
+// NOTE: SMTP is disabled - Railway blocks outbound SMTP (port 465/587).
+// Email is sent via Resend HTTP API only.
 if (EMAIL_MODE === 'production') {
-  if (!EMAIL_USER || !EMAIL_APP_PASSWORD) {
-    console.warn('⚠️  EMAIL_USER and EMAIL_APP_PASSWORD not set. Email will be logged to console.');
+  if (RESEND_API_KEY) {
+    console.log('✅ Email service ready: Resend HTTP API');
+    console.log('📧 From:', EMAIL_FROM);
   } else {
-    transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // port 465 uses SSL directly (more reliable on Railway)
-      auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_APP_PASSWORD
-      },
-      tls: {
-        rejectUnauthorized: false
-      },
-      connectionTimeout: 30000,
-      greetingTimeout: 30000,
-      socketTimeout: 30000
-    });
-    console.log('✅ Email transporter initialized for production mode');
-    console.log('📧 SMTP: smtp.gmail.com:587 | User:', EMAIL_USER);
+    console.warn('⚠️  RESEND_API_KEY not set. OTP emails will be logged to console only.');
   }
 }
 
@@ -166,35 +149,11 @@ async function sendOTPEmail(email, otpCode) {
 </html>
   `;
 
-  // PRODUCTION MODE: Try SMTP first (more reliable)
-  if (EMAIL_MODE === 'production' && transporter) {
-    try {
-      const sendPromise = transporter.sendMail({
-        from: EMAIL_FROM,
-        to: email,
-        subject: emailSubject,
-        html: emailHTML
-      });
-
-      // Timeout after 30 seconds to give SMTP enough time before fallback
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP timeout')), 30000)
-      );
-
-      const info = await Promise.race([sendPromise, timeoutPromise]);
-      console.log('✅ OTP email sent via SMTP to:', email, '| msgid:', info.messageId);
-      return true;
-    } catch (error) {
-      console.error('⚠️  SMTP email send failed:', error.message, '| code:', error.code || 'N/A');
-      // Fall through to Resend
-    }
-  }
-
-  // Fallback to Resend HTTP API if SMTP failed
+  // PRODUCTION MODE: Send via Resend HTTP API (SMTP disabled on Railway)
   if (EMAIL_MODE === 'production' && resend) {
     try {
       const { data, error } = await resend.emails.send({
-        from: EMAIL_FROM || 'Hantar Travel <onboarding@resend.dev>',
+        from: EMAIL_FROM,
         to: email,
         subject: emailSubject,
         html: emailHTML
@@ -213,9 +172,9 @@ async function sendOTPEmail(email, otpCode) {
     }
   }
 
-  // In production, never mark OTP as sent if both SMTP and Resend are unavailable/failed.
+  // Production but no Resend key configured
   if (EMAIL_MODE === 'production') {
-    console.error('❌ OTP email not sent: no working transport (SMTP/Resend) in production mode');
+    console.error('❌ OTP email not sent: RESEND_API_KEY not set in production mode');
     return false;
   }
 
