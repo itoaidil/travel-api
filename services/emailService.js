@@ -288,7 +288,7 @@ async function sendWelcomeEmail(email, name) {
  */
 async function sendDriverPasswordEmail(email, name, password) {
   try {
-    const emailSubject = 'Akun Driver Hantar - Password Anda';
+    const emailSubject = 'Pendaftaran Driver Hantar - Sedang Diproses';
     const emailHTML = `
 <!DOCTYPE html>
 <html>
@@ -301,10 +301,7 @@ async function sendDriverPasswordEmail(email, name, password) {
     .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
     .header h1 { margin: 0; font-size: 24px; }
     .content { padding: 40px 30px; }
-    .pwd-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; padding: 20px; border-radius: 8px; margin: 30px 0; font-family: monospace; }
-    .info { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-    .info ul { margin: 10px 0; padding-left: 20px; }
-    .info li { margin: 5px 0; color: #856404; }
+    .info { background: #e8f4fd; border-left: 4px solid #3498db; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0; }
     .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #6c757d; font-size: 14px; }
   </style>
 </head>
@@ -312,23 +309,17 @@ async function sendDriverPasswordEmail(email, name, password) {
   <div class="container">
     <div class="header">
       <h1>Hantar</h1>
-      <p style="margin: 10px 0 0 0; font-size: 16px;">Informasi Akun Driver</p>
+      <p style="margin: 10px 0 0 0; font-size: 16px;">Informasi Pendaftaran Driver</p>
     </div>
     <div class="content">
       <p style="font-size: 16px; color: #333;">Halo, <strong>${name}</strong>,</p>
       <p style="font-size: 16px; color: #555; line-height: 1.6;">
         Pendaftaran Anda sebagai Driver <strong>Hantar</strong> sedang dalam proses review admin.
-        Berikut adalah password akun Anda:
       </p>
-      <div class="pwd-box">${password}</div>
       <div class="info">
-        <strong>⚠️ Penting:</strong>
-        <ul>
-          <li>Simpan password ini dengan aman</li>
-          <li>Jangan bagikan password kepada siapa pun</li>
-          <li>Gunakan nomor HP dan password ini untuk login ke aplikasi driver</li>
-          <li>Akun aktif setelah admin menyetujui pendaftaran Anda (maks. 24 jam)</li>
-        </ul>
+        <p style="margin: 0; color: #2980b9; font-size: 15px;">
+          Kami akan mengirimkan email notifikasi beserta informasi login Anda setelah akun disetujui oleh admin (maks. 24 jam).
+        </p>
       </div>
       <p style="font-size: 14px; color: #777; margin-top: 30px;">
         Jika Anda tidak merasa mendaftar, silakan abaikan email ini atau hubungi customer service kami.
