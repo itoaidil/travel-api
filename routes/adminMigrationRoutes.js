@@ -174,4 +174,32 @@ router.post('/migrate-013', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-014
+ * Add penerima column to batch_deliveries table (after updated_at).
+ */
+router.post('/migrate-014', async (req, res) => {
+  try {
+    // Check if column already exists
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'penerima'
+    `);
+    if (cols.length > 0) {
+      return res.json({ success: true, message: 'Kolom penerima sudah ada', already_exists: true });
+    }
+    await db.query(`
+      ALTER TABLE batch_deliveries
+      ADD COLUMN penerima VARCHAR(255) NULL AFTER updated_at
+    `);
+    console.log('✅ batch_deliveries.penerima column added');
+    return res.json({ success: true, message: 'Kolom penerima berhasil ditambahkan' });
+  } catch (error) {
+    console.error('❌ Migration 014 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;

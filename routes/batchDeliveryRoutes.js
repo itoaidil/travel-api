@@ -30,9 +30,9 @@ router.post('/import', async (req, res) => {
         const lat = parseFloat(pkg.lat) || 0;
         const lng = parseFloat(pkg.lng) || 0;
         const [result] = await db.query(
-          `INSERT IGNORE INTO batch_deliveries (row_no, npp, recipient_address, lat, lng)
-           VALUES (?, ?, ?, ?, ?)`,
-          [pkg.no || null, pkg.npp, pkg.address || '', lat, lng]
+          `INSERT IGNORE INTO batch_deliveries (row_no, npp, recipient_address, lat, lng, penerima)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [pkg.no || null, pkg.npp, pkg.address || '', lat, lng, pkg.penerima || null]
         );
         if (result.affectedRows === 0) {
           skippedCount++;
@@ -108,7 +108,7 @@ router.get('/driver/:driverId', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
-              delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
+              penerima, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -265,7 +265,7 @@ router.get('/list', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
-              delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
+              penerima, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -296,7 +296,7 @@ router.get('/track/:npp', async (req, res) => {
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address,
               lat, lng, wave, driver_id, status,
-              delivery_photo_url, driver_notes,
+              penerima, delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries WHERE npp = ?`,
       [npp]
