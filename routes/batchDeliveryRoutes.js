@@ -60,6 +60,160 @@ router.post('/import', async (req, res) => {
 });
 
 /**
+ * POST /api/batch-delivery/assign
+ * Admin assigns pending packages to a driver.
+ * Body: { driver_id, limit } — assign up to `limit` pending packages to driver.
+ */
+router.post('/assign', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { driver_id, limit = 100 } = req.body;
+    if (!driver_id) return res.status(400).json({ success: false, message: 'driver_id is required' });
+
+    const [result] = await db.query(
+      `UPDATE batch_deliveries
+       SET driver_id = ?, status = 'assigned', assigned_at = NOW()
+       WHERE status = 'pending'
+       LIMIT ?`,
+      [driver_id, parseInt(limit)]
+    );
+
+    res.json({ success: true, data: { assigned: result.affectedRows, driver_id } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/driver/:driverId
+ * List packages assigned to a specific driver.
+ * Query: status (optional), page, limit
+ */
+router.get('/driver/:driverId', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { driverId } = req.params;
+    const { status, page = 1, limit = 100 } = req.query;
+    const where = ['driver_id = ?'];
+    const params = [driverId];
+
+    if (status) { where.push('status = ?'); params.push(status); }
+
+    const whereClause = 'WHERE ' + where.join(' AND ');
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const [rows] = await db.query(
+      `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
+              delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
+       FROM batch_deliveries ${whereClause}
+       ORDER BY CAST(row_no AS UNSIGNED) ASC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
+    );
+
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total FROM batch_deliveries ${whereClause}`,
+      params
+    );
+
+    const [[summary]] = await db.query(
+      `SELECT
+         SUM(status = 'assigned')         AS todo,
+         SUM(status = 'in_progress')      AS in_progress,
+         SUM(status = 'delivered')        AS delivered,
+         SUM(status = 'not_found')        AS not_found,
+         SUM(status = 'address_mismatch') AS address_mismatch,
+         SUM(status = 'refused')          AS refused
+       FROM batch_deliveries WHERE driver_id = ?`,
+      [driverId]
+    );
+
+    res.json({ success: true, data: rows, total, summary, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/:id
+ * Get single package detail.
+ */
+router.get('/:id', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM batch_deliveries WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * PATCH /api/batch-delivery/:id/status
+ * Driver updates delivery status.
+ * Body: { status, driver_notes }
+ * Valid status: in_progress, delivered, not_found, address_mismatch, refused
+ */
+router.patch('/:id/status', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { status, driver_notes } = req.body;
+    const allowed = ['in_progress', 'delivered', 'not_found', 'address_mismatch', 'refused', 'returned'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: `Invalid status. Allowed: ${allowed.join(', ')}` });
+    }
+
+    const deliveredAt = status === 'delivered' ? 'NOW()' : 'NULL';
+    await db.query(
+      `UPDATE batch_deliveries
+       SET status = ?, driver_notes = ?, delivered_at = ${deliveredAt}, updated_at = NOW()
+       WHERE id = ?`,
+      [status, driver_notes || null, req.params.id]
+    );
+
+    res.json({ success: true, message: 'Status updated' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * PATCH /api/batch-delivery/:id/photo
+ * Save Cloudinary photo URL for proof of delivery.
+ * Body: { photo_url }
+ */
+router.patch('/:id/photo', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { photo_url } = req.body;
+    if (!photo_url) return res.status(400).json({ success: false, message: 'photo_url is required' });
+
+    await db.query(
+      `UPDATE batch_deliveries SET delivery_photo_url = ?, updated_at = NOW() WHERE id = ?`,
+      [photo_url, req.params.id]
+    );
+
+    res.json({ success: true, message: 'Photo saved' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /api/batch-delivery/stats
  * Summary: total, per status, koordinat valid vs 0,0
  */
