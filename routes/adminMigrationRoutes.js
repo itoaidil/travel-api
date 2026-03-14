@@ -219,12 +219,16 @@ router.post('/migrate-015', async (req, res) => {
     }
     await db.query(`
       ALTER TABLE batch_deliveries
-      ADD COLUMN batch_code VARCHAR(20)
-        AS (CONCAT('BATCH-', LPAD(id, 4, '0'))) STORED
-        AFTER penerima
+      ADD COLUMN batch_code VARCHAR(20) NULL AFTER penerima
     `);
-    console.log('✅ batch_deliveries.batch_code generated column added');
-    return res.json({ success: true, message: 'Kolom batch_code berhasil ditambahkan' });
+    // Populate all existing rows
+    await db.query(`
+      UPDATE batch_deliveries
+      SET batch_code = CONCAT('BATCH-', LPAD(id, 4, '0'))
+      WHERE batch_code IS NULL
+    `);
+    console.log('✅ batch_deliveries.batch_code column added and populated');
+    return res.json({ success: true, message: 'Kolom batch_code berhasil ditambahkan dan diisi' });
   } catch (error) {
     console.error('❌ Migration 015 error:', error);
     return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });

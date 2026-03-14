@@ -34,6 +34,13 @@ router.post('/import', async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?)`,
           [pkg.no || null, pkg.npp, pkg.address || '', lat, lng, pkg.penerima || null]
         );
+        if (result.affectedRows > 0 && result.insertId) {
+          // Set batch_code now that we have the id
+          await db.query(
+            `UPDATE batch_deliveries SET batch_code = CONCAT('BATCH-', LPAD(id, 4, '0')) WHERE id = ?`,
+            [result.insertId]
+          );
+        }
         if (result.affectedRows === 0) {
           skippedCount++;
         } else {
