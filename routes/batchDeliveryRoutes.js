@@ -283,4 +283,31 @@ router.get('/list', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/batch-delivery/track/:npp
+ * Public endpoint – cek resi batch delivery by NPP.
+ * Returns status, address, coords, and driver_id for live tracking.
+ */
+router.get('/track/:npp', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { npp } = req.params;
+    const [rows] = await db.query(
+      `SELECT id, row_no, npp, recipient_address,
+              lat, lng, wave, driver_id, status,
+              delivery_photo_url, driver_notes,
+              assigned_at, delivered_at, updated_at
+       FROM batch_deliveries WHERE npp = ?`,
+      [npp]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'NPP tidak ditemukan' });
+    }
+    res.json({ success: true, data: { ...rows[0], _type: 'batch' } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
