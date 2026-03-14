@@ -32,9 +32,9 @@ if (EMAIL_MODE === 'production') {
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000,
-      socketTimeout: 20000
+      connectionTimeout: 30000, // 30 seconds
+      greetingTimeout: 30000,
+      socketTimeout: 30000
     });
     console.log('✅ Email transporter initialized for production mode');
     console.log('📧 SMTP: smtp.gmail.com:587 | User:', EMAIL_USER);
@@ -176,9 +176,9 @@ async function sendOTPEmail(email, otpCode) {
         html: emailHTML
       });
 
-      // Timeout after 8 seconds to avoid blocking registration
+      // Timeout after 30 seconds to give SMTP enough time before fallback
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP timeout')), 8000)
+        setTimeout(() => reject(new Error('SMTP timeout')), 30000)
       );
 
       const info = await Promise.race([sendPromise, timeoutPromise]);
