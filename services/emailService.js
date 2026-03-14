@@ -111,7 +111,7 @@ async function sendOTPEmail(email, otpCode) {
 <body>
   <div class="container">
     <div class="header">
-      <h1>🚚 Hantar Travel</h1>
+      <h1>Hantar</h1>
       <p style="margin: 10px 0 0 0; font-size: 16px;">Verifikasi Akun Anda</p>
     </div>
     
@@ -141,7 +141,7 @@ async function sendOTPEmail(email, otpCode) {
     </div>
     
     <div class="footer">
-      <p style="margin: 5px 0;">© ${new Date().getFullYear()} Hantar Travel</p>
+      <p style="margin: 5px 0;">© ${new Date().getFullYear()} Hantar</p>
       <p style="margin: 5px 0;">Layanan Pengiriman Paket Terpercaya</p>
     </div>
   </div>
