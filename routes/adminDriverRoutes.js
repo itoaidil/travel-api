@@ -19,9 +19,9 @@ function generateRandomPassword(length = 10) {
 // Send approval email with credentials using Resend
 async function sendApprovalEmail(email, fullName, phone, password) {
   const { data, error } = await resend.emails.send({
-    from: process.env.DRIVER_EMAIL_FROM || 'Rute Admin <onboarding@resend.dev>',
+    from: process.env.EMAIL_FROM || 'Hantar <noreply@primarylineindo.com>',
     to: [email],
-    subject: '✅ Akun Driver Anda Telah Disetujui!',
+    subject: 'Akun Driver Anda Telah Disetujui - Hantar',
     html: `
       <!DOCTYPE html>
       <html>
@@ -43,7 +43,7 @@ async function sendApprovalEmail(email, fullName, phone, password) {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 Selamat!</h1>
+            <h1>Selamat!</h1>
             <p>Akun Driver Anda Telah Disetujui</p>
           </div>
           <div class="content">
@@ -71,7 +71,7 @@ async function sendApprovalEmail(email, fullName, phone, password) {
             
             <p><strong>Anda sekarang dapat:</strong></p>
             <ul>
-              <li>✅ Login ke aplikasi Rute Driver</li>
+              <li>✅ Login ke aplikasi Hantar Driver</li>
               <li>✅ Mulai menerima pesanan</li>
               <li>✅ Mendapatkan penghasilan</li>
             </ul>
@@ -80,16 +80,16 @@ async function sendApprovalEmail(email, fullName, phone, password) {
             
             <p>Jika ada pertanyaan, silahkan hubungi tim support kami.</p>
             
-            <p>Terima kasih telah bergabung dengan Rute!</p>
+            <p>Terima kasih telah bergabung dengan Hantar!</p>
             
             <p style="margin-top: 30px;">
               Salam hangat,<br>
-              <strong>Tim Rute</strong>
+              <strong>Tim Hantar</strong>
             </p>
           </div>
           <div class="footer">
             <p>Email ini dikirim otomatis, mohon tidak membalas email ini.</p>
-            <p>&copy; 2026 Rute. All rights reserved.</p>
+            <p>&copy; 2026 Hantar. All rights reserved.</p>
           </div>
         </div>
       </body>
