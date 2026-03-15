@@ -115,7 +115,7 @@ router.get('/driver/:driverId', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
-              penerima, batch_code, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
+              penerima, batch_code, kawasan, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
