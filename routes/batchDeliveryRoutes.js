@@ -272,7 +272,7 @@ router.get('/list', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
-              penerima, batch_code, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
+              penerima, batch_code, kawasan, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -303,7 +303,7 @@ router.get('/track/:npp', async (req, res) => {
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address,
               lat, lng, wave, driver_id, status,
-              penerima, batch_code, delivery_photo_url, driver_notes,
+              penerima, batch_code, kawasan, delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries WHERE npp = ?`,
       [npp]
@@ -336,7 +336,7 @@ router.get('/customer/:customerId', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT id, row_no, npp, batch_code, penerima, recipient_address,
-              lat, lng, status, delivery_photo_url, driver_notes,
+              lat, lng, status, kawasan, delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC

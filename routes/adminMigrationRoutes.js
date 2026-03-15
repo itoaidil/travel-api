@@ -271,4 +271,102 @@ router.post('/migrate-016', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-017
+ * Add kawasan column to batch_deliveries and auto-detect from recipient_address.
+ * Kawasan rules ordered from most specific to most general.
+ */
+router.post('/migrate-017', async (req, res) => {
+  try {
+    // 1. Add column if not exists
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'kawasan'
+    `);
+    if (cols.length === 0) {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN kawasan VARCHAR(100) NULL AFTER customer_id,
+        ADD INDEX idx_kawasan (kawasan)
+      `);
+      console.log('✅ batch_deliveries.kawasan column added');
+    }
+
+    // 2. Kawasan detection rules: [label, keywords[]]
+    //    Ordered most-specific first
+    const KAWASAN_RULES = [
+      ['Kaw. Ind. Millenium',   ['MILLENIUM', 'MILLENNIUM']],
+      ['Kaw. Ind. Cikupa Mas',  ['CIKUPA MAS']],
+      ['Kaw. Ind. Balaraja',    ['BALARAJA PERMAI', 'INDO PERMAI BALARAJA', 'JATAKE']],
+      ['BSD City',              ['BSD', 'GADING SERPONG', 'YCHUB', 'ITC BSD']],
+      ['Citra Raya',            ['CITRA RAYA', 'CITA RAYA', 'RAYA ECOPOLIS']],
+      ['Suvarna Sutera',        ['SUVARNA SUTERA', 'SUVARNA']],
+      ['Talaga Bestari',        ['TALAGA BESTARI']],
+      ['Lippo Karawaci',        ['LIPPO KARAWACI', 'LIPPO']],
+      ['Grand Wisata',          ['GRAND WISATA']],
+      ['Palem Semi',            ['PALEM SEMI']],
+      ['Serpong',               ['SERPONG']],
+      ['Kelapa Dua',            ['KELAPA DUA']],
+      ['Pagedangan',            ['PAGEDANGAN']],
+      ['Cisauk',                ['CISAUK']],
+      ['Cikupa',                ['CIKUPA']],
+      ['Panongan',              ['PANONGAN']],
+      ['Curug',                 ['CURUG']],
+      ['Tigaraksa',             ['TIGARAKSA']],
+      ['Balaraja',              ['BALARAJA', 'SENTUL JAYA']],
+      ['Kosambi',               ['KOSAMBI']],
+      ['Pasar Kemis',           ['PASAR KEMIS']],
+      ['Legok',                 ['LEGOK']],
+      ['Teluknaga',             ['TELUKNAGA']],
+      ['Jayanti',               ['JAYANTI']],
+      ['Solear',                ['SOLEAR']],
+      ['Pakuhaji',              ['PAKUHAJI']],
+      ['Sepatan',               ['SEPATAN']],
+      ['Jambe',                 ['JAMBE']],
+      ['Rajeg',                 ['RAJEG']],
+      ['Cibodas',               ['CIBODAS']],
+    ];
+
+    // 3. Fetch all rows that need kawasan set
+    const [rows] = await db.query(
+      `SELECT id, recipient_address FROM batch_deliveries WHERE kawasan IS NULL`
+    );
+
+    let updated = 0;
+    let notMatched = 0;
+    for (const row of rows) {
+      const addr = (row.recipient_address || '').toUpperCase().replace(/\n/g, ' ');
+      let matched = null;
+      for (const [label, keywords] of KAWASAN_RULES) {
+        if (keywords.some(kw => addr.includes(kw))) {
+          matched = label;
+          break;
+        }
+      }
+      if (matched) {
+        await db.query(`UPDATE batch_deliveries SET kawasan = ? WHERE id = ?`, [matched, row.id]);
+        updated++;
+      } else {
+        await db.query(`UPDATE batch_deliveries SET kawasan = 'Lainnya' WHERE id = ?`, [row.id]);
+        notMatched++;
+      }
+    }
+
+    console.log(`✅ Migration 017: ${updated} rows matched, ${notMatched} rows set to Lainnya`);
+    return res.json({
+      success: true,
+      message: 'Kolom kawasan ditambahkan dan diisi berdasarkan alamat',
+      matched: updated,
+      lainnya: notMatched,
+      total: rows.length
+    });
+  } catch (error) {
+    console.error('❌ Migration 017 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;
+
