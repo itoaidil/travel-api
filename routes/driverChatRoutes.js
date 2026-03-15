@@ -44,10 +44,9 @@ router.get('/inbox/:driverId', async (req, res) => {
         -- Booking info from independent_bookings
         ib.pickup_address,
         ib.dropoff_address,
-        ib.status as booking_status,
-        ib.booking_date,
-        ib.booking_time,
-        ib.vehicle_type
+        ib.booking_status,
+        ib.vehicle_type,
+        ib.created_at as booking_date
         
       FROM chat_rooms cr
       LEFT JOIN users u ON cr.customer_id = u.id
