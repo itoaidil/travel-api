@@ -368,5 +368,32 @@ router.post('/migrate-017', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-018
+ * Add vehicle_photo_url column to independent_drivers after last_fcm_update
+ */
+router.post('/migrate-018', async (req, res) => {
+  try {
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'independent_drivers'
+        AND COLUMN_NAME = 'vehicle_photo_url'
+    `);
+    if (cols.length > 0) {
+      return res.json({ success: true, message: 'Kolom vehicle_photo_url sudah ada, tidak perlu migrasi' });
+    }
+    await db.query(`
+      ALTER TABLE independent_drivers
+      ADD COLUMN vehicle_photo_url VARCHAR(500) NULL AFTER last_fcm_update
+    `);
+    console.log('✅ vehicle_photo_url column added to independent_drivers');
+    return res.json({ success: true, message: 'Kolom vehicle_photo_url berhasil ditambahkan' });
+  } catch (error) {
+    console.error('❌ Migration 018 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;
 

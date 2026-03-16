@@ -55,8 +55,8 @@ router.post('/register', async (req, res) => {
       rt, rw, kelurahan, kecamatan, religion, maritalStatus, email,
       vehicleType, vehicleColor, vehicleYear, vehiclePlate,
       bankName, accountNumber, accountName,
-      ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl, stnkPhotoUrl, 
-      licenseNumber, stnkNumber
+      ktpPhotoUrl, selfiePhotoUrl, simPhotoUrl, stnkPhotoUrl,
+      vehiclePhotoUrl, licenseNumber, stnkNumber
     } = req.body;
 
     // Validate required fields
@@ -160,9 +160,9 @@ router.post('/register', async (req, res) => {
         vehicle_type, vehicle_plate, vehicle_color, vehicle_year,
         license_number, license_photo_url, stnk_number, stnk_photo_url,
         bank_name, bank_account_number, bank_account_holder,
-        ktp_photo_url, selfie_photo_url,
+        ktp_photo_url, selfie_photo_url, vehicle_photo_url,
         is_verified, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
       [
         userId, fullName, phone, email, nik,
         birthPlace, birthDate, religion, maritalStatus,
@@ -175,7 +175,7 @@ router.post('/register', async (req, res) => {
         stnkNumber || null,  // NULL untuk sepeda
         stnkPhotoUrl || null,
         bankName, accountNumber, accountName,
-        ktpPhotoUrl, selfiePhotoUrl,
+        ktpPhotoUrl, selfiePhotoUrl, vehiclePhotoUrl || null,
         false // not verified until admin approval
       ]
     );
