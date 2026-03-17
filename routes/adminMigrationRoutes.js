@@ -415,7 +415,7 @@ router.get('/migrate-019', async (req, res) => {
     } else {
       await db.query(`
         ALTER TABLE batch_deliveries
-        ADD COLUMN nama_kecamatan VARCHAR(100) NULL AFTER dropoff_address
+        ADD COLUMN nama_kecamatan VARCHAR(100) NULL
       `);
       console.log('✅ nama_kecamatan added to batch_deliveries');
       results.push('nama_kecamatan berhasil ditambahkan');
@@ -433,7 +433,7 @@ router.get('/migrate-019', async (req, res) => {
     } else {
       await db.query(`
         ALTER TABLE batch_deliveries
-        ADD COLUMN nama_kabupaten VARCHAR(100) NULL AFTER nama_kecamatan
+        ADD COLUMN nama_kabupaten VARCHAR(100) NULL
       `);
       console.log('✅ nama_kabupaten added to batch_deliveries');
       results.push('nama_kabupaten berhasil ditambahkan');
