@@ -447,15 +447,15 @@ router.get('/migrate-019', async (req, res) => {
 });
 
 /**
- * GET /api/admin/reset-delivery?npp=22214381
- * Reset batch_deliveries record back to pending for testing purposes
+ * GET /api/admin/reset-delivery?npp=22214381&status=assigned&driver_id=45
+ * Reset batch_deliveries record for testing purposes
+ * status default: pending, optional: assigned
  */
 router.get('/reset-delivery', async (req, res) => {
   try {
-    const { npp } = req.query;
+    const { npp, status = 'pending', driver_id } = req.query;
     if (!npp) return res.status(400).json({ success: false, message: 'Parameter npp diperlukan' });
 
-    // Check current data first
     const [rows] = await db.query(
       `SELECT id, npp, status, driver_id, assigned_at, delivered_at FROM batch_deliveries WHERE npp = ?`,
       [npp]
@@ -464,24 +464,36 @@ router.get('/reset-delivery', async (req, res) => {
       return res.status(404).json({ success: false, message: `Data dengan npp '${npp}' tidak ditemukan` });
     }
 
-    // Reset to initial pending state
-    const [result] = await db.query(
-      `UPDATE batch_deliveries
-       SET status = 'pending',
-           driver_id = NULL,
-           assigned_at = NULL,
-           delivered_at = NULL,
-           delivery_photo_url = NULL,
-           driver_notes = NULL,
-           updated_at = NOW()
-       WHERE npp = ?`,
-      [npp]
-    );
+    let sql, params;
+    if (status === 'assigned' && driver_id) {
+      sql = `UPDATE batch_deliveries
+             SET status = 'assigned',
+                 driver_id = ?,
+                 assigned_at = NOW(),
+                 delivered_at = NULL,
+                 delivery_photo_url = NULL,
+                 driver_notes = NULL,
+                 updated_at = NOW()
+             WHERE npp = ?`;
+      params = [parseInt(driver_id), npp];
+    } else {
+      sql = `UPDATE batch_deliveries
+             SET status = 'pending',
+                 driver_id = NULL,
+                 assigned_at = NULL,
+                 delivered_at = NULL,
+                 delivery_photo_url = NULL,
+                 driver_notes = NULL,
+                 updated_at = NOW()
+             WHERE npp = ?`;
+      params = [npp];
+    }
 
-    console.log(`✅ Reset npp=${npp}: ${result.affectedRows} row(s) affected`);
+    const [result] = await db.query(sql, params);
+    console.log(`✅ Reset npp=${npp} → status=${status}: ${result.affectedRows} row(s)`);
     return res.json({
       success: true,
-      message: `${result.affectedRows} data dengan npp '${npp}' berhasil direset ke pending`,
+      message: `${result.affectedRows} data npp '${npp}' direset ke '${status}'`,
       before: rows,
     });
   } catch (error) {
