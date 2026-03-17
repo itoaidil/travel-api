@@ -780,9 +780,11 @@ router.put('/:booking_id/cancel', async (req, res) => {
       });
     }
 
-    // Get current booking status
+    // Get current booking status + payment info for potential refund
     const [bookings] = await db.query(
-      'SELECT booking_status, driver_id FROM independent_bookings WHERE id = ?',
+      `SELECT booking_status, driver_id, payment_status, payment_method,
+              payment_transaction_id, payment_transaction_status
+       FROM independent_bookings WHERE id = ?`,
       [bookingId]
     );
 
@@ -826,13 +828,60 @@ router.put('/:booking_id/cancel', async (req, res) => {
 
     console.log(`✅ Booking ${bookingId} cancelled by ${cancelled_by || 'customer'}`);
 
+    // --- REFUND LOGIC ---
+    let refundInfo = null;
+
+    if (booking.payment_status === 'paid' && booking.payment_method === 'midtrans' && booking.payment_transaction_id) {
+      try {
+        const { coreApi } = require('../config/midtrans');
+
+        if (booking.payment_transaction_status === 'authorize') {
+          // Authorized but not yet captured — use cancel API
+          await coreApi.transaction.cancel(booking.payment_transaction_id);
+          console.log(`💰 Midtrans payment cancelled (pre-capture) for booking ${bookingId}`);
+        } else {
+          // Already captured/settled — use refund API
+          await coreApi.transaction.refund(booking.payment_transaction_id, {
+            refund_key: `REFUND-${bookingId}-${Date.now()}`,
+            reason: reason || 'Customer cancellation',
+          });
+          console.log(`💰 Midtrans refund requested for booking ${bookingId}`);
+        }
+
+        await db.query(
+          `UPDATE independent_bookings SET payment_status = 'refunded', updated_at = NOW() WHERE id = ?`,
+          [bookingId]
+        );
+
+        refundInfo = {
+          status: 'refunded',
+          message: 'Refund berhasil diproses. Dana akan kembali dalam 1–7 hari kerja sesuai metode pembayaran.',
+        };
+      } catch (refundError) {
+        // Refund failed — flag for manual admin review, do NOT block the cancellation
+        console.error(`❌ Auto-refund failed for booking ${bookingId}:`, refundError.message);
+        // Keep payment_status = 'paid' so admin can identify bookings needing manual refund
+        // (cancelled booking + payment_status='paid' = pending manual refund)
+        refundInfo = {
+          status: 'pending_manual',
+          message: 'Pembatalan berhasil. Proses pengembalian dana sedang ditinjau oleh admin.',
+        };
+      }
+    } else if (booking.payment_status === 'paid' && booking.payment_method === 'cash') {
+      refundInfo = {
+        status: 'manual',
+        message: 'Pembayaran tunai — pengembalian dana dilakukan langsung oleh driver atau admin.',
+      };
+    }
+
     return res.json({
       success: true,
       message: 'Booking cancelled successfully',
       data: {
         booking_id: bookingId,
         status: 'cancelled',
-        cancelled_at: new Date().toISOString()
+        cancelled_at: new Date().toISOString(),
+        refund: refundInfo,
       }
     });
 
