@@ -502,5 +502,36 @@ router.get('/reset-delivery', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/assign-delivery?npp=22214381&driver_id=45
+ * Assign a delivery to a driver (for testing)
+ */
+router.get('/assign-delivery', async (req, res) => {
+  try {
+    const { npp, driver_id } = req.query;
+    if (!npp || !driver_id) return res.status(400).json({ success: false, message: 'Parameter npp dan driver_id diperlukan' });
+
+    const [result] = await db.query(
+      `UPDATE batch_deliveries
+       SET status = 'assigned',
+           driver_id = ?,
+           assigned_at = NOW(),
+           delivered_at = NULL,
+           delivery_photo_url = NULL,
+           driver_notes = NULL,
+           updated_at = NOW()
+       WHERE npp = ?`,
+      [parseInt(driver_id), npp]
+    );
+
+    return res.json({
+      success: true,
+      message: `${result.affectedRows} data npp '${npp}' di-assign ke driver ${driver_id} (status: assigned)`,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
 
