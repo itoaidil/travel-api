@@ -395,5 +395,56 @@ router.post('/migrate-018', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/migrate-019
+ * Add nama_kecamatan and nama_kabupaten columns to batch_deliveries
+ */
+router.get('/migrate-019', async (req, res) => {
+  try {
+    const results = [];
+
+    // Check and add nama_kecamatan
+    const [colKecamatan] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'nama_kecamatan'
+    `);
+    if (colKecamatan.length > 0) {
+      results.push('nama_kecamatan sudah ada, dilewati');
+    } else {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN nama_kecamatan VARCHAR(100) NULL AFTER dropoff_address
+      `);
+      console.log('✅ nama_kecamatan added to batch_deliveries');
+      results.push('nama_kecamatan berhasil ditambahkan');
+    }
+
+    // Check and add nama_kabupaten
+    const [colKabupaten] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'nama_kabupaten'
+    `);
+    if (colKabupaten.length > 0) {
+      results.push('nama_kabupaten sudah ada, dilewati');
+    } else {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN nama_kabupaten VARCHAR(100) NULL AFTER nama_kecamatan
+      `);
+      console.log('✅ nama_kabupaten added to batch_deliveries');
+      results.push('nama_kabupaten berhasil ditambahkan');
+    }
+
+    return res.json({ success: true, message: results.join('; ') });
+  } catch (error) {
+    console.error('❌ Migration 019 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
 module.exports = router;
 
