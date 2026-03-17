@@ -446,5 +446,49 @@ router.get('/migrate-019', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/admin/reset-delivery?npp=22214381
+ * Reset batch_deliveries record back to pending for testing purposes
+ */
+router.get('/reset-delivery', async (req, res) => {
+  try {
+    const { npp } = req.query;
+    if (!npp) return res.status(400).json({ success: false, message: 'Parameter npp diperlukan' });
+
+    // Check current data first
+    const [rows] = await db.query(
+      `SELECT id, npp, status, driver_id, assigned_at, delivered_at FROM batch_deliveries WHERE npp = ?`,
+      [npp]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: `Data dengan npp '${npp}' tidak ditemukan` });
+    }
+
+    // Reset to initial pending state
+    const [result] = await db.query(
+      `UPDATE batch_deliveries
+       SET status = 'pending',
+           driver_id = NULL,
+           assigned_at = NULL,
+           delivered_at = NULL,
+           delivery_photo_url = NULL,
+           driver_notes = NULL,
+           updated_at = NOW()
+       WHERE npp = ?`,
+      [npp]
+    );
+
+    console.log(`✅ Reset npp=${npp}: ${result.affectedRows} row(s) affected`);
+    return res.json({
+      success: true,
+      message: `${result.affectedRows} data dengan npp '${npp}' berhasil direset ke pending`,
+      before: rows,
+    });
+  } catch (error) {
+    console.error('❌ Reset delivery error:', error);
+    return res.status(500).json({ success: false, message: 'Reset failed', error: error.message });
+  }
+});
+
 module.exports = router;
 
