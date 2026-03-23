@@ -719,7 +719,7 @@ router.post('/:booking_id/accept', async (req, res) => {
     const driver = drivers[0];
 
     const [bookings] = await db.query(
-      'SELECT id, booking_id FROM independent_bookings WHERE id = ?',
+      'SELECT id, booking_code FROM independent_bookings WHERE id = ?',
       [bookingId]
     );
 
