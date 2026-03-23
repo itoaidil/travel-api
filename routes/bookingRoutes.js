@@ -886,6 +886,13 @@ router.post('/:booking_id/reject', async (req, res) => {
       });
     }
 
+    if (['accepted', 'assigned', 'in_progress'].includes(booking.booking_status)) {
+      return res.status(409).json({
+        success: false,
+        message: `Booking already handled with status: ${booking.booking_status}`
+      });
+    }
+
     // Record rejection for analytics (if table exists)
     try {
       await db.query(
@@ -911,20 +918,24 @@ router.post('/:booking_id/reject', async (req, res) => {
       console.warn('⚠️ Could not update total_rejections:', error.message);
     }
 
-    // Keep booking open so customer continues searching other drivers.
+    // End customer search immediately when driver rejects this offer.
     await db.query(
       `UPDATE independent_bookings
-       SET updated_at = NOW()
+       SET booking_status = 'cancelled',
+           cancellation_reason = ?,
+           cancelled_by = 'driver',
+           cancelled_at = NOW(),
+           updated_at = NOW()
        WHERE id = ?`,
-      [bookingId]
+      [reason || 'Driver rejected', bookingId]
     );
 
     return res.json({
       success: true,
-      message: 'Order ditolak. Sistem akan mencari driver lain.',
+      message: 'Order ditolak. Pencarian driver customer dihentikan.',
       data: {
         booking_id: bookingId,
-        status: booking.booking_status,
+        status: 'cancelled',
       }
     });
   } catch (error) {
