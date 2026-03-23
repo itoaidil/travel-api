@@ -123,7 +123,8 @@ router.get('/drivers-stats', async (req, res) => {
 
     const [customerStats] = await db.query(`
       SELECT COUNT(*) as total_customers
-      FROM customers
+      FROM users
+      WHERE user_type = 'customer'
     `);
 
     const statsData = {
