@@ -166,7 +166,7 @@ router.post('/register', async (req, res) => {
       [
         userId, fullName, phone, email, nik,
         birthPlace, birthDate, religion, maritalStatus,
-        address, `${rt}/${rw}`, kelurahan, kecamatan,
+        address, [rt, rw].filter(Boolean).map(v => v.trim()).join('/') || null, kelurahan, kecamatan,
         vehicleType || 'bike', 
         vehiclePlate || null,  // NULL untuk sepeda
         vehicleColor, vehicleYear,

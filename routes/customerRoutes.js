@@ -22,10 +22,10 @@ router.post('/register', async (req, res) => {
     const { full_name, email, phone, password } = req.body;
 
     // Validate required fields
-    if (!full_name || !email || !password) {
+    if (!full_name || !email || !password || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'Full name, email, and password are required'
+        message: 'Nama lengkap, email, nomor HP, dan password harus diisi'
       });
     }
 
@@ -65,7 +65,7 @@ router.post('/register', async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO customers (full_name, email, phone, password, email_verified, is_active, created_at) 
        VALUES (?, ?, ?, ?, 0, 0, NOW())`,
-      [full_name, email, phone || null, hashedPassword]
+      [full_name, email, phone, hashedPassword]
     );
 
     const customerId = result.insertId;
