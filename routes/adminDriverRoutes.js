@@ -120,10 +120,20 @@ router.get('/drivers-stats', async (req, res) => {
       LEFT JOIN users u ON d.user_id = u.id
       WHERE u.user_type = 'driver'
     `);
+
+    const [customerStats] = await db.query(`
+      SELECT COUNT(*) as total_customers
+      FROM customers
+    `);
+
+    const statsData = {
+      ...(stats[0] || {}),
+      total_customers: customerStats?.[0]?.total_customers || 0,
+    };
     
     res.json({
       success: true,
-      stats: stats[0]
+      stats: statsData
     });
   } catch (error) {
     console.error('Error loading stats:', error);

@@ -61,7 +61,7 @@ async function loadStats() {
 // Render statistics cards
 function renderStats(stats) {
     const statsHTML = `
-        <div class="col-md-3">
+        <div class="col-md-6 col-lg">
             <div class="card stats-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -76,7 +76,7 @@ function renderStats(stats) {
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-6 col-lg">
             <div class="card stats-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -91,7 +91,7 @@ function renderStats(stats) {
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-6 col-lg">
             <div class="card stats-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -106,7 +106,7 @@ function renderStats(stats) {
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-6 col-lg">
             <div class="card stats-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -116,6 +116,21 @@ function renderStats(stats) {
                         </div>
                         <div class="stats-icon bg-danger bg-opacity-10 text-danger">
                             <i class="fas fa-times-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg">
+            <div class="card stats-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Total Customers</h6>
+                            <h2 class="mb-0 text-info">${stats.total_customers || 0}</h2>
+                        </div>
+                        <div class="stats-icon bg-info bg-opacity-10 text-info">
+                            <i class="fas fa-user-friends"></i>
                         </div>
                     </div>
                 </div>
@@ -239,11 +254,15 @@ function renderDrivers(drivers) {
 
 // Render action buttons based on status
 function renderActionButtons(driver) {
+    const detailButton = `
+        <button class="btn btn-info btn-sm mb-2 w-100" onclick="showDriverDetail(${driver.id})">
+            <i class="fas fa-eye me-1"></i>View Detail
+        </button>
+    `;
+
     if (driver.status === 'pending') {
         return `
-            <button class="btn btn-info btn-sm mb-2 w-100" onclick="showDriverDetail(${driver.id})">
-                <i class="fas fa-eye me-1"></i>View Detail
-            </button>
+            ${detailButton}
             <button class="btn btn-approve btn-sm mb-2 w-100" onclick="approveDriver(${driver.id}, '${driver.full_name}')">
                 <i class="fas fa-check-circle me-1"></i>Approve
             </button>
@@ -251,26 +270,37 @@ function renderActionButtons(driver) {
                 <i class="fas fa-times-circle me-1"></i>Reject
             </button>
         `;
-    } else if (driver.status === 'approved') {
+    }
+
+    if (driver.status === 'approved' || driver.status === 'active') {
         return `
-            <span class="badge bg-success p-2">
-                <i class="fas fa-check-circle me-1"></i>Approved
-            </span>
-        `;
-    } else if (driver.status === 'rejected') {
-        return `
-            <span class="badge bg-danger p-2">
-                <i class="fas fa-times-circle me-1"></i>Rejected
+            ${detailButton}
+            <span class="badge bg-success p-2 w-100">
+                <i class="fas fa-check-circle me-1"></i>${driver.status === 'active' ? 'Active' : 'Approved'}
             </span>
         `;
     }
+
+    if (driver.status === 'rejected' || driver.status === 'inactive' || driver.status === 'offline') {
+        return `
+            ${detailButton}
+            <span class="badge bg-danger p-2 w-100">
+                <i class="fas fa-times-circle me-1"></i>${driver.status ? driver.status.toUpperCase() : 'Rejected'}
+            </span>
+        `;
+    }
+
+    return detailButton;
 }
 
 // Get status badge class
 function getStatusBadgeClass(status) {
     switch(status) {
         case 'pending': return 'badge-pending';
+        case 'active':
         case 'approved': return 'badge-approved';
+        case 'inactive':
+        case 'offline':
         case 'rejected': return 'badge-rejected';
         default: return 'bg-secondary';
     }
