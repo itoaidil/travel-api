@@ -841,6 +841,103 @@ router.post('/:booking_id/accept', async (req, res) => {
 });
 
 /**
+ * POST /api/bookings/:booking_id/reject
+ * Driver rejects a booking offer without cancelling customer booking
+ */
+router.post('/:booking_id/reject', async (req, res) => {
+  const db = req.db;
+
+  if (!db) {
+    return res.status(500).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+
+  try {
+    const bookingId = req.params.booking_id;
+    const { driver_id, reason } = req.body;
+
+    if (!driver_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_id is required'
+      });
+    }
+
+    const [bookings] = await db.query(
+      'SELECT id, booking_status, driver_id FROM independent_bookings WHERE id = ?',
+      [bookingId]
+    );
+
+    if (bookings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const booking = bookings[0];
+
+    if (['completed', 'cancelled'].includes(booking.booking_status)) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot reject booking with status: ${booking.booking_status}`
+      });
+    }
+
+    // Record rejection for analytics (if table exists)
+    try {
+      await db.query(
+        `INSERT INTO driver_order_rejections
+         (driver_id, booking_id, reason, rejected_at)
+         VALUES (?, ?, ?, NOW())`,
+        [driver_id, bookingId, reason || 'Driver rejected']
+      );
+    } catch (error) {
+      console.warn('⚠️ Could not save driver rejection record:', error.message);
+    }
+
+    // Update driver rejection stats when column exists
+    try {
+      await db.query(
+        `UPDATE independent_drivers
+         SET total_rejections = COALESCE(total_rejections, 0) + 1,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [driver_id]
+      );
+    } catch (error) {
+      console.warn('⚠️ Could not update total_rejections:', error.message);
+    }
+
+    // Keep booking open so customer continues searching other drivers.
+    await db.query(
+      `UPDATE independent_bookings
+       SET updated_at = NOW()
+       WHERE id = ?`,
+      [bookingId]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Order ditolak. Sistem akan mencari driver lain.',
+      data: {
+        booking_id: bookingId,
+        status: booking.booking_status,
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error rejecting booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reject booking',
+      error: error.message
+    });
+  }
+});
+
+/**
  * PUT /api/bookings/:booking_id/cancel
  * Cancel a booking (customer or driver)
  */
@@ -882,8 +979,21 @@ router.put('/:booking_id/cancel', async (req, res) => {
 
     const booking = bookings[0];
 
+    // Idempotent cancel: if already cancelled, return success to avoid UX errors
+    if (booking.booking_status === 'cancelled') {
+      return res.json({
+        success: true,
+        message: 'Booking already cancelled',
+        data: {
+          booking_id: bookingId,
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+        }
+      });
+    }
+
     // Only allow cancellation if booking is pending or accepted
-    if (!['pending', 'accepted'].includes(booking.booking_status)) {
+    if (!['pending', 'accepted', 'searching'].includes(booking.booking_status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot cancel booking with status: ${booking.booking_status}`
