@@ -1,6 +1,32 @@
 const admin = require('firebase-admin');
 const db = require('../config/database');
 
+function isUnregisteredTokenError(error) {
+  const code = error?.code || error?.errorInfo?.code || '';
+  return (
+    code === 'messaging/registration-token-not-registered' ||
+    code === 'messaging/invalid-registration-token'
+  );
+}
+
+async function clearInvalidDriverTokens(tokens = []) {
+  if (!tokens.length) return;
+
+  try {
+    const placeholders = tokens.map(() => '?').join(',');
+    await db.query(
+      `UPDATE independent_drivers
+       SET fcm_token = NULL,
+           updated_at = NOW()
+       WHERE fcm_token IN (${placeholders})`,
+      tokens
+    );
+    console.log(`🧹 Cleared ${tokens.length} invalid FCM token(s) from independent_drivers`);
+  } catch (error) {
+    console.error('❌ Failed to clear invalid FCM tokens:', error.message);
+  }
+}
+
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
   try {
@@ -149,6 +175,11 @@ async function sendNewBookingNotification(fcmToken, bookingData, driverId = null
     return { success: true, messageId: response };
   } catch (error) {
     console.error('❌ Error sending notification:', error);
+
+    if (isUnregisteredTokenError(error)) {
+      await clearInvalidDriverTokens([fcmToken]);
+    }
+
     return { success: false, error: error.message };
   }
 }
@@ -192,19 +223,29 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`✅ Sent to ${response.successCount}/${fcmTokens.length} drivers`);
+
+    const invalidTokens = [];
     
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           console.error(`Failed to send to token ${idx}:`, resp.error);
+          if (isUnregisteredTokenError(resp.error)) {
+            invalidTokens.push(fcmTokens[idx]);
+          }
         }
       });
+    }
+
+    if (invalidTokens.length > 0) {
+      await clearInvalidDriverTokens(invalidTokens);
     }
     
     return { 
       success: true, 
       successCount: response.successCount,
-      failureCount: response.failureCount 
+      failureCount: response.failureCount,
+      invalidTokenCount: invalidTokens.length
     };
   } catch (error) {
     console.error('❌ Error sending multicast notification:', error);
@@ -250,6 +291,66 @@ async function sendNotificationToSingleDriver(fcmToken, messageData) {
     return { success: true, messageId: response };
   } catch (error) {
     console.error('❌ Error sending chat notification:', error);
+
+    if (isUnregisteredTokenError(error)) {
+      await clearInvalidDriverTokens([fcmToken]);
+    }
+
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Send booking already taken notification to a driver
+ * @param {string} fcmToken - Driver's FCM token
+ * @param {object} bookingData - Booking information
+ */
+async function sendBookingTakenNotificationToDriver(fcmToken, bookingData = {}) {
+  if (!fcmToken) {
+    console.log('⚠️ No FCM token provided for booking-taken notification');
+    return { success: false, error: 'No FCM token' };
+  }
+
+  const message = {
+    token: fcmToken,
+    notification: {
+      title: '⚠️ Pesanan Sudah Diambil',
+      body: 'Pesanan ini sudah diambil driver lain. Tunggu order berikutnya ya.',
+    },
+    data: {
+      type: 'booking_taken',
+      booking_id: String(bookingData.booking_id || ''),
+      booking_code: String(bookingData.booking_code || ''),
+      taken_by_driver: String(bookingData.taken_by_driver || ''),
+    },
+    android: {
+      priority: 'high',
+      notification: {
+        sound: 'default',
+        channelId: 'booking_channel',
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+        },
+      },
+    },
+  };
+
+  try {
+    const response = await admin.messaging().send(message);
+    console.log('✅ Booking-taken notification sent:', response);
+    return { success: true, messageId: response };
+  } catch (error) {
+    console.error('❌ Error sending booking-taken notification:', error);
+
+    if (isUnregisteredTokenError(error)) {
+      await clearInvalidDriverTokens([fcmToken]);
+    }
+
     return { success: false, error: error.message };
   }
 }
@@ -258,5 +359,6 @@ module.exports = {
   sendNewBookingNotification,
   sendNotificationToMultipleDrivers,
   sendNotificationToSingleDriver,
+  sendBookingTakenNotificationToDriver,
   saveNotificationToDatabase,
 };

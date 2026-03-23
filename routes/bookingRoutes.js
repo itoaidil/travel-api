@@ -1,7 +1,68 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
-const { sendNotificationToMultipleDrivers } = require('../services/notificationService');
+const {
+  sendNotificationToMultipleDrivers,
+  sendBookingTakenNotificationToDriver,
+} = require('../services/notificationService');
+
+async function notifyOtherDriversBookingTaken(bookingId, acceptedDriverId, acceptedDriverName) {
+  try {
+    const [otherDrivers] = await db.query(
+      `SELECT DISTINCT dn.driver_id, d.fcm_token
+       FROM driver_notifications dn
+       JOIN independent_drivers d ON d.id = dn.driver_id
+       WHERE dn.booking_id = ?
+         AND dn.driver_id != ?
+         AND d.fcm_token IS NOT NULL`,
+      [bookingId, acceptedDriverId]
+    );
+
+    if (!otherDrivers.length) {
+      return;
+    }
+
+    await Promise.all(
+      otherDrivers.map(async (driverRow) => {
+        await sendBookingTakenNotificationToDriver(driverRow.fcm_token, {
+          booking_id: bookingId,
+          taken_by_driver: acceptedDriverName,
+        });
+
+        await db.query(
+          `INSERT INTO driver_notifications
+            (driver_id, booking_id, notification_type, title, message, data, is_read, created_at)
+           VALUES (?, ?, 'booking_taken', ?, ?, ?, 0, NOW())`,
+          [
+            driverRow.driver_id,
+            bookingId,
+            '⚠️ Pesanan Sudah Diambil',
+            'Pesanan ini sudah diambil driver lain. Tunggu order berikutnya ya.',
+            JSON.stringify({
+              booking_id: bookingId,
+              type: 'booking_taken',
+              taken_by_driver: acceptedDriverName,
+            }),
+          ]
+        );
+      })
+    );
+
+    await db.query(
+      `UPDATE driver_notifications
+       SET is_read = 1
+       WHERE booking_id = ?
+         AND driver_id != ?
+         AND notification_type = 'new_booking'
+         AND is_read = 0`,
+      [bookingId, acceptedDriverId]
+    );
+
+    console.log(`✅ Notified ${otherDrivers.length} non-winning driver(s) for booking ${bookingId}`);
+  } catch (error) {
+    console.error(`⚠️ Failed notifying non-winning drivers for booking ${bookingId}:`, error.message);
+  }
+}
 
 /**
  * POST /api/bookings/delivery/create
@@ -231,7 +292,8 @@ router.post('/delivery/create', async (req, res) => {
       
       // Get drivers within 10km radius who are active
       // Use subquery to get latest location per driver
-      const radiusDegrees = 10 / 111; // ~10km radius
+      const SEARCH_RADIUS_KM = 5;
+      const radiusDegrees = SEARCH_RADIUS_KM / 111; // ~5km radius
       
       const [nearbyDrivers] = await db.query(`
         SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
@@ -257,7 +319,7 @@ router.post('/delivery/create', async (req, res) => {
           AND dl.longitude IS NOT NULL
           AND dl.latitude BETWEEN ? - ? AND ? + ?
           AND dl.longitude BETWEEN ? - ? AND ? + ?
-        HAVING distance_km <= 10
+        HAVING distance_km <= ${SEARCH_RADIUS_KM}
         ORDER BY distance_km ASC
         LIMIT 10
       `, [
@@ -656,9 +718,8 @@ router.post('/:booking_id/accept', async (req, res) => {
 
     const driver = drivers[0];
 
-    // Check if booking is still available
     const [bookings] = await db.query(
-      'SELECT booking_status, driver_id FROM independent_bookings WHERE id = ?',
+      'SELECT id, booking_id FROM independent_bookings WHERE id = ?',
       [bookingId]
     );
 
@@ -669,26 +730,43 @@ router.post('/:booking_id/accept', async (req, res) => {
       });
     }
 
-    const booking = bookings[0];
-
-    if (booking.driver_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Booking already accepted by another driver'
-      });
-    }
-
-    // Assign driver to booking
-    await db.query(
+    // Atomic assignment to avoid race condition when multiple drivers accept at same time
+    const [assignResult] = await db.query(
       `UPDATE independent_bookings 
        SET driver_id = ?, 
            driver_name = ?,
            driver_phone = ?,
            booking_status = 'accepted',
            updated_at = NOW()
-       WHERE id = ?`,
+       WHERE id = ?
+         AND driver_id IS NULL
+         AND booking_status IN ('pending', 'searching')`,
       [driver_id, driver.full_name, driver.phone, bookingId]
     );
+
+    if (assignResult.affectedRows === 0) {
+      const [latestBookingRows] = await db.query(
+        `SELECT ib.booking_status, ib.driver_id, d.full_name AS accepted_driver_name
+         FROM independent_bookings ib
+         LEFT JOIN independent_drivers d ON d.id = ib.driver_id
+         WHERE ib.id = ?`,
+        [bookingId]
+      );
+
+      const latestBooking = latestBookingRows[0] || {};
+      return res.status(409).json({
+        success: false,
+        message: latestBooking.driver_id
+          ? 'Booking already accepted by another driver'
+          : `Booking is no longer available (${latestBooking.booking_status || 'updated'})`,
+        data: {
+          booking_id: bookingId,
+          status: latestBooking.booking_status || 'updated',
+          accepted_driver_id: latestBooking.driver_id || null,
+          accepted_driver_name: latestBooking.accepted_driver_name || null,
+        }
+      });
+    }
 
     // Update driver availability (if column exists)
     // Note: independent_drivers may not have is_available column
@@ -733,6 +811,13 @@ router.post('/:booking_id/accept', async (req, res) => {
       console.error('⚠️ Failed to create chat room:', chatError.message);
       // Don't fail the booking acceptance if chat room creation fails
     }
+
+    const booking = bookings[0];
+    notifyOtherDriversBookingTaken(
+      booking.id,
+      driver_id,
+      driver.full_name
+    );
 
     return res.json({
       success: true,

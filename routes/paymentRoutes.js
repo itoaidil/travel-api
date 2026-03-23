@@ -243,7 +243,8 @@ router.post('/midtrans/notification', async (req, res) => {
       
       // Get nearby drivers (same logic as booking creation)
       const { sendNotificationToMultipleDrivers } = require('../services/notificationService');
-      const radiusDegrees = 10 / 111; // ~10km radius
+      const SEARCH_RADIUS_KM = 5;
+      const radiusDegrees = SEARCH_RADIUS_KM / 111; // ~5km radius
       
       const [nearbyDrivers] = await db.query(`
         SELECT d.id, d.fcm_token, d.full_name, d.vehicle_type,
@@ -269,7 +270,7 @@ router.post('/midtrans/notification', async (req, res) => {
           AND dl.longitude IS NOT NULL
           AND dl.latitude BETWEEN ? - ? AND ? + ?
           AND dl.longitude BETWEEN ? - ? AND ? + ?
-        HAVING distance_km <= 10
+        HAVING distance_km <= ${SEARCH_RADIUS_KM}
         ORDER BY distance_km ASC
         LIMIT 10
       `, [
