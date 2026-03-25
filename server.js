@@ -74,6 +74,7 @@ app.use('/api/test', require('./routes/testDriverRoutes')); // Test driver creat
 
 // Admin endpoints (for driver verification)
 app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for driver approval
+app.use('/api/admin', require('./routes/adminFranchiseRoutes')); // Admin panel for franchise management
 
 // Withdrawal endpoints (for driver earnings withdrawal & DANA disbursement)
 app.use('/api/withdrawal', require('./routes/driverWithdrawalRoutes')); // Driver & admin withdrawal API
