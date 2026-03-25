@@ -286,6 +286,33 @@ router.post('/delivery/create', async (req, res) => {
       payment_status: paymentStatus
     });
 
+    // Lookup franchise partner by pickup_address matching kabupaten coverage area
+    try {
+      const [coverageRows] = await db.query(
+        `SELECT fp.id AS franchise_partner_id, fca.kabupaten_name
+         FROM franchise_coverage_areas fca
+         JOIN franchise_partners fp ON fp.id = fca.franchise_partner_id
+         WHERE fp.status = 'active'
+           AND ? LIKE CONCAT('%', fca.kabupaten_name, '%')
+         LIMIT 1`,
+        [pickup_address]
+      );
+
+      if (coverageRows.length > 0) {
+        const { franchise_partner_id, kabupaten_name } = coverageRows[0];
+        await db.query(
+          'UPDATE independent_bookings SET franchise_partner_id = ? WHERE id = ?',
+          [franchise_partner_id, bookingId]
+        );
+        console.log(`🏢 Booking ${bookingId} assigned to franchise ${franchise_partner_id} (${kabupaten_name})`);
+      } else {
+        console.log(`ℹ️ No franchise coverage found for pickup: ${pickup_address?.substring(0, 50)}`);
+      }
+    } catch (franchiseErr) {
+      // Non-critical: do not fail the booking if franchise lookup fails
+      console.warn('⚠️ Franchise lookup failed:', franchiseErr.message);
+    }
+
     // Find nearby available drivers and send notifications
     try {
       console.log('📲 Finding nearby drivers...');
