@@ -79,6 +79,9 @@ app.use('/api/admin', require('./routes/adminDriverRoutes')); // Admin panel for
 app.use('/api/withdrawal', require('./routes/driverWithdrawalRoutes')); // Driver & admin withdrawal API
 app.use('/api/withdrawal', require('./routes/danaDisburseRoutes')); // DANA disbursement callbacks
 
+// Franchise registration (from landing page)
+app.use('/api/franchise', require('./routes/franchiseRoutes'));
+
 // Commented out routes (files not in repo):
 // app.use('/api/student', require('./routes/studentRoutes'));
 // app.use('/api/driver', require('./routes/driverRoutes'));
