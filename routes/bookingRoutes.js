@@ -1187,12 +1187,30 @@ router.post('/:booking_id/complete', async (req, res) => {
       console.warn(`⚠️ Warning: Percentages don't add up to 100: driver=${driverPercentage}%, platform=${platformFeePercentage}%`);
     }
 
+    // Franchise fee split: if booking has a franchise partner, split platform fee
+    let franchiseFeePercentage = 0;
+    let franchiseFee = 0;
+
+    if (booking.franchise_partner_id) {
+      const [franchiseRows] = await db.query(
+        'SELECT commission_rate FROM franchise_partners WHERE id = ? AND status = "active" LIMIT 1',
+        [booking.franchise_partner_id]
+      );
+      if (franchiseRows.length > 0) {
+        franchiseFeePercentage = parseFloat(franchiseRows[0].commission_rate) || 0;
+      }
+      console.log(`🏢 Franchise partner ${booking.franchise_partner_id}: commission ${franchiseFeePercentage}%`);
+    }
+
     // Calculate earnings based on database percentages
+    // Driver % is unchanged; franchise takes a slice from the platform's share
     const totalPrice = parseFloat(booking.total_price) || 0;
     const driverEarnings = (totalPrice * driverPercentage) / 100;
-    const platformFee = (totalPrice * platformFeePercentage) / 100;
+    const franchiseFeeAmount = (totalPrice * franchiseFeePercentage) / 100;
+    const effectivePlatformFeePercentage = platformFeePercentage - franchiseFeePercentage;
+    const effectivePlatformFee = (totalPrice * effectivePlatformFeePercentage) / 100;
 
-    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings} (${driverPercentage}%), Platform: ${platformFee} (${platformFeePercentage}%)`);
+    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings} (${driverPercentage}%), Franchise: ${franchiseFeeAmount} (${franchiseFeePercentage}%), Platform: ${effectivePlatformFee} (${effectivePlatformFeePercentage}%)`);
 
     // Update booking with earnings and status
     await db.query(
@@ -1201,11 +1219,12 @@ router.post('/:booking_id/complete', async (req, res) => {
            driver_earnings = ?,
            platform_fee = ?,
            platform_fee_percentage = ?,
+           franchise_fee = ?,
            completed_at = NOW(),
            actual_dropoff_datetime = NOW(),
            updated_at = NOW()
        WHERE id = ?`,
-      [driverEarnings, platformFee, platformFeePercentage, booking_id]
+      [driverEarnings, effectivePlatformFee, effectivePlatformFeePercentage, franchiseFeeAmount, booking_id]
     );
 
     // Make driver available again (table may not have is_available column in current schema)
@@ -1229,7 +1248,8 @@ router.post('/:booking_id/complete', async (req, res) => {
         status: 'completed',
         total_price: totalPrice,
         driver_earnings: driverEarnings,
-        platform_fee: platformFee,
+        platform_fee: effectivePlatformFee,
+        franchise_fee: franchiseFeeAmount,
         completed_at: new Date().toISOString()
       }
     });
