@@ -533,5 +533,124 @@ router.get('/assign-delivery', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-020
+ * Create franchise system tables and add franchise columns to independent_bookings
+ * - Creates franchise_partners table
+ * - Creates franchise_coverage_areas table
+ * - Adds franchise_partner_id and franchise_fee columns to independent_bookings
+ */
+router.post('/migrate-020', async (req, res) => {
+  const results = [];
+
+  try {
+    // 1. Create franchise_partners table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS franchise_partners (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(150) NOT NULL,
+        owner_name VARCHAR(150) NULL,
+        phone VARCHAR(20) NULL,
+        email VARCHAR(100) NULL,
+        city VARCHAR(100) NULL,
+        address TEXT NULL,
+        commission_rate DECIMAL(5,2) NOT NULL DEFAULT 10.00,
+        status ENUM('active', 'inactive', 'pending') NOT NULL DEFAULT 'pending',
+        notes TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_status (status),
+        INDEX idx_city (city)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    results.push({ step: 1, table: 'franchise_partners', status: 'ok' });
+    console.log('✅ franchise_partners table ready');
+
+    // 2. Create franchise_coverage_areas table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS franchise_coverage_areas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        franchise_partner_id INT NOT NULL,
+        kabupaten_name VARCHAR(100) NOT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_franchise_partner (franchise_partner_id),
+        INDEX idx_kabupaten (kabupaten_name),
+        INDEX idx_active (is_active),
+        FOREIGN KEY (franchise_partner_id)
+          REFERENCES franchise_partners(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    results.push({ step: 2, table: 'franchise_coverage_areas', status: 'ok' });
+    console.log('✅ franchise_coverage_areas table ready');
+
+    // 3. Add franchise_partner_id column to independent_bookings
+    const [col1] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'independent_bookings'
+        AND COLUMN_NAME = 'franchise_partner_id'
+    `);
+    if (col1.length > 0) {
+      results.push({ step: 3, column: 'franchise_partner_id', status: 'already_exists' });
+    } else {
+      await db.query(`
+        ALTER TABLE independent_bookings
+        ADD COLUMN franchise_partner_id INT NULL DEFAULT NULL AFTER paid_at
+      `);
+      results.push({ step: 3, column: 'franchise_partner_id', status: 'added' });
+      console.log('✅ franchise_partner_id column added to independent_bookings');
+    }
+
+    // 4. Add franchise_fee column to independent_bookings
+    const [col2] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'independent_bookings'
+        AND COLUMN_NAME = 'franchise_fee'
+    `);
+    if (col2.length > 0) {
+      results.push({ step: 4, column: 'franchise_fee', status: 'already_exists' });
+    } else {
+      await db.query(`
+        ALTER TABLE independent_bookings
+        ADD COLUMN franchise_fee DECIMAL(15,2) NULL DEFAULT 0 AFTER franchise_partner_id
+      `);
+      results.push({ step: 4, column: 'franchise_fee', status: 'added' });
+      console.log('✅ franchise_fee column added to independent_bookings');
+    }
+
+    // 5. Add index on franchise_partner_id
+    try {
+      await db.query(`
+        ALTER TABLE independent_bookings
+        ADD INDEX idx_franchise_partner (franchise_partner_id)
+      `);
+      results.push({ step: 5, index: 'idx_franchise_partner', status: 'added' });
+    } catch (indexErr) {
+      if (indexErr.code === 'ER_DUP_KEYNAME') {
+        results.push({ step: 5, index: 'idx_franchise_partner', status: 'already_exists' });
+      } else {
+        results.push({ step: 5, index: 'idx_franchise_partner', status: 'warning', message: indexErr.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Migration 020 - Franchise system berhasil dibuat',
+      results
+    });
+
+  } catch (error) {
+    console.error('❌ Migration 020 error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Migration 020 gagal',
+      error: error.message,
+      results
+    });
+  }
+});
+
 module.exports = router;
 
