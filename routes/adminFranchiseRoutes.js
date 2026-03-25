@@ -1,4 +1,6 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const { ensureFranchiseAdminUsersTable } = require('./franchiseAdminAuthRoutes');
 const router = express.Router();
 
 /**
@@ -188,6 +190,88 @@ router.put('/franchise/:id/commission', async (req, res) => {
   } catch (error) {
     console.error('❌ Error updating commission rate:', error);
     return res.status(500).json({ success: false, message: 'Failed to update commission rate', error: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/franchise/:id/create-login
+ * Body: { email, password, full_name? }
+ */
+router.post('/franchise/:id/create-login', async (req, res) => {
+  try {
+    const db = req.db;
+    const { id } = req.params;
+    const { email, password, full_name } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'email dan password wajib diisi' });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({ success: false, message: 'password minimal 6 karakter' });
+    }
+
+    const [partners] = await db.query(
+      `SELECT id, name, owner_name, email, status
+       FROM franchise_partners
+       WHERE id = ?
+       LIMIT 1`,
+      [id]
+    );
+
+    if (partners.length === 0) {
+      return res.status(404).json({ success: false, message: 'Franchise not found' });
+    }
+
+    const partner = partners[0];
+
+    if (partner.status !== 'active') {
+      return res.status(400).json({ success: false, message: 'Franchise harus status active sebelum dibuat login' });
+    }
+
+    await ensureFranchiseAdminUsersTable(db);
+
+    const safeEmail = String(email).trim().toLowerCase();
+    const name = (full_name && String(full_name).trim()) || partner.owner_name || partner.name;
+    const passwordHash = await bcrypt.hash(String(password), 10);
+
+    const [existing] = await db.query(
+      'SELECT id, franchise_partner_id FROM franchise_admin_users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+      [safeEmail]
+    );
+
+    if (existing.length > 0 && Number(existing[0].franchise_partner_id) !== Number(id)) {
+      return res.status(409).json({ success: false, message: 'Email sudah digunakan oleh franchise lain' });
+    }
+
+    if (existing.length > 0) {
+      await db.query(
+        `UPDATE franchise_admin_users
+         SET full_name = ?, password_hash = ?, is_active = 1, franchise_partner_id = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [name, passwordHash, id, existing[0].id]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO franchise_admin_users
+         (franchise_partner_id, full_name, email, password_hash, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, NOW(), NOW())`,
+        [id, name, safeEmail, passwordHash]
+      );
+    }
+
+    return res.json({
+      success: true,
+      message: 'Akun login franchise admin berhasil dibuat/diperbarui',
+      data: {
+        franchise_partner_id: Number(id),
+        email: safeEmail,
+        full_name: name
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error creating franchise login:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create login', error: error.message });
   }
 });
 

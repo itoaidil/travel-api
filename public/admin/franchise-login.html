@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Franchise Admin Login - Hantar</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --brand-blue: #1d4ed8;
+      --brand-blue-dark: #1e3a8a;
+      --brand-amber: #f59e0b;
+    }
+
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% 20%, rgba(29, 78, 216, 0.18), transparent 40%),
+                  radial-gradient(circle at 80% 30%, rgba(245, 158, 11, 0.18), transparent 42%),
+                  linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 480px;
+      border: 0;
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.15);
+      overflow: hidden;
+    }
+
+    .login-head {
+      background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-blue-dark) 100%);
+      color: #fff;
+      padding: 22px;
+    }
+
+    .status-box {
+      font-size: 0.92rem;
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: none;
+    }
+
+    .result-box {
+      display: none;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.9rem;
+      max-height: 200px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="card login-card">
+    <div class="login-head">
+      <h4 class="mb-1"><i class="fas fa-store me-2"></i>Franchise Admin Login</h4>
+      <div class="opacity-75">Cek login franchise langsung dari domain API</div>
+    </div>
+    <div class="card-body p-4">
+      <form id="loginForm" class="d-grid gap-3">
+        <div>
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control" id="email" placeholder="admin.franchise1@hantar.id" required>
+        </div>
+        <div>
+          <label class="form-label">Password</label>
+          <input type="password" class="form-control" id="password" placeholder="Masukkan password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="loginBtn">
+          <i class="fas fa-right-to-bracket me-2"></i>Login
+        </button>
+      </form>
+
+      <div id="statusBox" class="status-box mt-3"></div>
+
+      <div class="mt-3 result-box" id="resultBox"></div>
+
+      <div class="d-flex gap-2 mt-4">
+        <a href="/admin/" class="btn btn-outline-secondary btn-sm">
+          <i class="fas fa-arrow-left me-1"></i>Kembali ke Admin Panel
+        </a>
+        <button class="btn btn-outline-warning btn-sm" id="clearTokenBtn" type="button">
+          <i class="fas fa-trash me-1"></i>Hapus Token
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE_URL = window.location.origin;
+    const TOKEN_KEY = 'franchise_admin_token';
+
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const statusBox = document.getElementById('statusBox');
+    const resultBox = document.getElementById('resultBox');
+    const clearTokenBtn = document.getElementById('clearTokenBtn');
+
+    function showStatus(message, type) {
+      statusBox.style.display = 'block';
+      statusBox.textContent = message;
+      statusBox.className = 'status-box mt-3 alert';
+      statusBox.classList.add(type === 'success' ? 'alert-success' : 'alert-danger');
+    }
+
+    function showResult(payload) {
+      resultBox.style.display = 'block';
+      resultBox.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    clearTokenBtn.addEventListener('click', () => {
+      localStorage.removeItem(TOKEN_KEY);
+      showStatus('Token franchise admin sudah dihapus dari browser.', 'success');
+      resultBox.style.display = 'none';
+    });
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
+      statusBox.style.display = 'none';
+      resultBox.style.display = 'none';
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/franchise-admin/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+
+        const text = await response.text();
+        let data;
+
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          throw new Error(`Response bukan JSON valid. Status ${response.status}`);
+        }
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Login gagal (HTTP ${response.status})`);
+        }
+
+        if (data.token) {
+          localStorage.setItem(TOKEN_KEY, data.token);
+        }
+
+        showStatus('Login berhasil. Token tersimpan di browser untuk test endpoint berikutnya.', 'success');
+        showResult({
+          success: data.success,
+          message: data.message,
+          user: data.user,
+          hasToken: Boolean(data.token)
+        });
+      } catch (error) {
+        showStatus(error.message || 'Terjadi kesalahan saat login.', 'error');
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<i class="fas fa-right-to-bracket me-2"></i>Login';
+      }
+    });
+  </script>
+</body>
+</html>

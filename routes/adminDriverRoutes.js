@@ -4,7 +4,8 @@ const bcrypt = require('bcrypt');
 const { Resend } = require('resend');
 
 // Initialize Resend
-const resend = new Resend(process.env.RESEND_API_KEY);
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 // Generate random password
 function generateRandomPassword(length = 10) {
@@ -18,6 +19,10 @@ function generateRandomPassword(length = 10) {
 
 // Send approval email with credentials using Resend
 async function sendApprovalEmail(email, fullName, phone, password) {
+  if (!resend) {
+    throw new Error('RESEND_API_KEY not configured');
+  }
+
   const { data, error } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'Hantar <noreply@primarylineindo.com>',
     to: [email],

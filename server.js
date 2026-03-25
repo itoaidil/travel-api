@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { ensureFranchiseAdminUsersTable } = require('./routes/franchiseAdminAuthRoutes');
 require('dotenv').config();
 
 // Database with timeout protection (OPTIONAL - for routes that need it)
@@ -82,6 +83,8 @@ app.use('/api/withdrawal', require('./routes/danaDisburseRoutes')); // DANA disb
 
 // Franchise registration (from landing page)
 app.use('/api/franchise', require('./routes/franchiseRoutes'));
+app.use('/api/franchise-admin/auth', require('./routes/franchiseAdminAuthRoutes').router);
+app.use('/api/franchise-admin', require('./routes/franchiseAdminRoutes')); // Franchise admin dashboard APIs
 
 // Commented out routes (files not in repo):
 // app.use('/api/student', require('./routes/studentRoutes'));
@@ -321,6 +324,28 @@ db.getConnection()
 */
 
 // Detailed health check endpoint with DB status (moved to bottom, skipped if DB unavailable)
+
+// Ensure franchise admin login table exists at startup.
+async function ensureStartupTables() {
+  if (!db || typeof db.query !== 'function') {
+    console.warn('⚠️ Skip startup table checks: database is not initialized');
+    return;
+  }
+
+  try {
+    await ensureFranchiseAdminUsersTable(db);
+    console.log('✅ Table verified: franchise_admin_users');
+  } catch (error) {
+    console.error('❌ Failed to verify franchise_admin_users table:', error.message);
+  }
+}
+
+ensureStartupTables();
+
+// --- SPA fallback for franchise admin (React app served at /franchise_admin) ---
+app.get('/franchise_admin/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'franchise_admin', 'index.html'));
+});
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Travel API Server running on http://0.0.0.0:${PORT}`);
