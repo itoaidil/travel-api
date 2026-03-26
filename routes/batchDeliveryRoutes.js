@@ -353,4 +353,77 @@ router.get('/customer/:customerId', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/batch-delivery/:id/location
+ * Save a GPS location point for a batch delivery (called by driver nav screen).
+ * Body: { driver_id, latitude, longitude }
+ */
+router.post('/:id/location', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { id } = req.params;
+    const { driver_id, latitude, longitude } = req.body;
+    if (!latitude || !longitude) {
+      return res.status(400).json({ success: false, message: 'latitude and longitude are required' });
+    }
+
+    // Ensure table exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS batch_delivery_locations (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        batch_delivery_id BIGINT NOT NULL,
+        driver_id INT,
+        latitude DECIMAL(10, 8) NOT NULL,
+        longitude DECIMAL(11, 8) NOT NULL,
+        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_delivery (batch_delivery_id),
+        INDEX idx_recorded (recorded_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await db.query(
+      `INSERT INTO batch_delivery_locations (batch_delivery_id, driver_id, latitude, longitude)
+       VALUES (?, ?, ?, ?)`,
+      [id, driver_id || null, latitude, longitude]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/:id/route
+ * Get stored GPS route points for a delivered batch item (for historical map).
+ */
+router.get('/:id/route', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { id } = req.params;
+
+    // Return empty if table doesn't exist yet
+    const [tables] = await db.query(
+      `SELECT TABLE_NAME FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'batch_delivery_locations'`
+    );
+    if (tables.length === 0) {
+      return res.json({ success: true, points: [] });
+    }
+
+    const [rows] = await db.query(
+      `SELECT latitude, longitude, recorded_at
+       FROM batch_delivery_locations
+       WHERE batch_delivery_id = ?
+       ORDER BY recorded_at ASC`,
+      [id]
+    );
+    res.json({ success: true, points: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
