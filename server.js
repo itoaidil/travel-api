@@ -65,6 +65,7 @@ app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat i
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
 app.use('/api/batch-delivery', require('./routes/batchDeliveryRoutes')); // Corporate Batch Delivery import
+app.use('/api/route', require('./routes/routingRoutes')); // Driving route proxy (Google Directions / OSRM)
 
 // Payment endpoints (for Midtrans webhook)
 app.use('/api/payment', require('./routes/paymentRoutes')); // Payment notifications & status
