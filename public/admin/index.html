@@ -395,11 +395,66 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-warning" id="detailEditVehicleBtn">
+                        <i class="fas fa-car me-2"></i>Edit Kendaraan
+                    </button>
                     <button type="button" class="btn btn-reject" id="detailRejectBtn">
                         <i class="fas fa-times-circle me-2"></i>Reject
                     </button>
                     <button type="button" class="btn btn-approve" id="detailApproveBtn">
                         <i class="fas fa-check-circle me-2"></i>Approve
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Vehicle Modal -->
+    <div class="modal fade" id="editVehicleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title"><i class="fas fa-car me-2"></i>Edit Data Kendaraan</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="ev_driver_id">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Jenis Kendaraan</label>
+                        <select class="form-select" id="ev_vehicle_type">
+                            <option value="bike">Sepeda</option>
+                            <option value="motor">Motor</option>
+                            <option value="car">Mobil</option>
+                            <option value="pickup">Pickup</option>
+                        </select>
+                    </div>
+                    <div id="ev_motor_fields">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Plat Nomor</label>
+                            <input type="text" class="form-control" id="ev_vehicle_plate" placeholder="Contoh: B 1234 ABC">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">No. SIM</label>
+                            <input type="text" class="form-control" id="ev_license_number" placeholder="Nomor SIM">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">No. STNK</label>
+                            <input type="text" class="form-control" id="ev_stnk_number" placeholder="Nomor STNK">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Warna Kendaraan</label>
+                        <input type="text" class="form-control" id="ev_vehicle_color" placeholder="Contoh: Hitam">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Tahun Kendaraan</label>
+                        <input type="number" class="form-control" id="ev_vehicle_year" placeholder="Contoh: 2022">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-warning" id="ev_save_btn" onclick="saveVehicleEdit()">
+                        <i class="fas fa-save me-2"></i>Simpan
                     </button>
                 </div>
             </div>

@@ -461,6 +461,11 @@ async function showDriverDetail(driverId) {
       showRejectModal(driver.id, driver.full_name, 'driver');
     };
 
+    document.getElementById('detailEditVehicleBtn').onclick = () => {
+      bootstrap.Modal.getInstance(document.getElementById('detailModal')).hide();
+      showEditVehicleModal(driver);
+    };
+
     new bootstrap.Modal(document.getElementById('detailModal')).show();
   } catch (error) {
     console.error(error);
@@ -663,4 +668,66 @@ function debounce(func, wait) {
 
 function escapeQuotes(value) {
   return String(value).replace(/'/g, "\\'");
+}
+
+function showEditVehicleModal(driver) {
+  const isMotor = driver.vehicle_type !== 'bike' && driver.vehicle_type !== 'skateboard' && driver.vehicle_type !== 'wheels';
+  document.getElementById('ev_driver_id').value = driver.id;
+  document.getElementById('ev_vehicle_type').value = driver.vehicle_type || 'bike';
+  document.getElementById('ev_vehicle_plate').value = driver.vehicle_plate || '';
+  document.getElementById('ev_license_number').value = driver.license_number || '';
+  document.getElementById('ev_stnk_number').value = driver.stnk_number || '';
+  document.getElementById('ev_vehicle_color').value = driver.vehicle_color || '';
+  document.getElementById('ev_vehicle_year').value = driver.vehicle_year || '';
+  document.getElementById('ev_motor_fields').style.display = isMotor ? '' : 'none';
+
+  document.getElementById('ev_vehicle_type').onchange = function () {
+    const isMV = this.value !== 'bike' && this.value !== 'skateboard' && this.value !== 'wheels';
+    document.getElementById('ev_motor_fields').style.display = isMV ? '' : 'none';
+  };
+
+  new bootstrap.Modal(document.getElementById('editVehicleModal')).show();
+}
+
+async function saveVehicleEdit() {
+  const driverId = document.getElementById('ev_driver_id').value;
+  const vehicleType = document.getElementById('ev_vehicle_type').value;
+  const isMotor = vehicleType !== 'bike' && vehicleType !== 'skateboard' && vehicleType !== 'wheels';
+
+  const payload = {
+    vehicleType,
+    vehiclePlate: isMotor ? document.getElementById('ev_vehicle_plate').value.trim() : null,
+    licenseNumber: isMotor ? document.getElementById('ev_license_number').value.trim() : null,
+    stnkNumber: isMotor ? document.getElementById('ev_stnk_number').value.trim() : null,
+    vehicleColor: document.getElementById('ev_vehicle_color').value.trim() || null,
+    vehicleYear: document.getElementById('ev_vehicle_year').value || null,
+  };
+
+  if (isMotor && (!payload.vehiclePlate || !payload.licenseNumber)) {
+    alert('Plat nomor dan no. SIM wajib diisi untuk kendaraan bermotor.');
+    return;
+  }
+
+  const btn = document.getElementById('ev_save_btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/admin/drivers/${driverId}/vehicle`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal menyimpan');
+
+    bootstrap.Modal.getInstance(document.getElementById('editVehicleModal')).hide();
+    alert('Data kendaraan berhasil diupdate!');
+    loadData();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
+  }
 }

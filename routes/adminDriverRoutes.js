@@ -498,4 +498,73 @@ router.post('/add-fcm-column', async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/admin/drivers/:id/vehicle
+ * Update driver vehicle information (e.g. fix wrong vehicle type selection)
+ * Body: { vehicleType, vehiclePlate, vehicleColor, vehicleYear, licenseNumber, simPhotoUrl, stnkNumber, stnkPhotoUrl, vehiclePhotoUrl }
+ */
+router.put('/drivers/:id/vehicle', async (req, res) => {
+  try {
+    const db = req.db;
+    const driverId = req.params.id;
+    const {
+      vehicleType, vehiclePlate, vehicleColor, vehicleYear,
+      licenseNumber, simPhotoUrl, stnkNumber, stnkPhotoUrl, vehiclePhotoUrl
+    } = req.body;
+
+    const [drivers] = await db.query(
+      'SELECT id, full_name FROM independent_drivers WHERE id = ?',
+      [driverId]
+    );
+
+    if (drivers.length === 0) {
+      return res.status(404).json({ success: false, message: 'Driver not found' });
+    }
+
+    const isMotorVehicle = vehicleType && vehicleType !== 'bike' && vehicleType !== 'skateboard' && vehicleType !== 'wheels';
+
+    if (isMotorVehicle && (!vehiclePlate || !licenseNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vehicle plate and license number are required for motor vehicles'
+      });
+    }
+
+    await db.query(
+      `UPDATE independent_drivers SET
+        vehicle_type = COALESCE(?, vehicle_type),
+        vehicle_plate = ?,
+        vehicle_color = COALESCE(?, vehicle_color),
+        vehicle_year = COALESCE(?, vehicle_year),
+        license_number = ?,
+        license_photo_url = COALESCE(?, license_photo_url),
+        stnk_number = ?,
+        stnk_photo_url = COALESCE(?, stnk_photo_url),
+        vehicle_photo_url = COALESCE(?, vehicle_photo_url),
+        updated_at = NOW()
+      WHERE id = ?`,
+      [
+        vehicleType || null,
+        vehiclePlate || null,
+        vehicleColor || null,
+        vehicleYear || null,
+        licenseNumber || null,
+        simPhotoUrl || null,
+        stnkNumber || null,
+        stnkPhotoUrl || null,
+        vehiclePhotoUrl || null,
+        driverId
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: `Vehicle data for driver ${drivers[0].full_name} updated successfully`
+    });
+  } catch (error) {
+    console.error('Error updating driver vehicle:', error);
+    res.status(500).json({ success: false, message: 'Failed to update vehicle data', error: error.message });
+  }
+});
+
 module.exports = router;
