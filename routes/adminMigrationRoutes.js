@@ -447,6 +447,55 @@ router.get('/migrate-019', async (req, res) => {
 });
 
 /**
+ * GET /api/admin/migrate-020
+ * Add nama_pic_penerima and nomor_hp_pic columns to batch_deliveries
+ */
+router.get('/migrate-020', async (req, res) => {
+  try {
+    const results = [];
+
+    const [colNamaPic] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'nama_pic_penerima'
+    `);
+    if (colNamaPic.length > 0) {
+      results.push('nama_pic_penerima sudah ada, dilewati');
+    } else {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN nama_pic_penerima VARCHAR(150) NULL AFTER nama_kabupaten
+      `);
+      console.log('✅ nama_pic_penerima added to batch_deliveries');
+      results.push('nama_pic_penerima berhasil ditambahkan');
+    }
+
+    const [colNomorHpPic] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'batch_deliveries'
+        AND COLUMN_NAME = 'nomor_hp_pic'
+    `);
+    if (colNomorHpPic.length > 0) {
+      results.push('nomor_hp_pic sudah ada, dilewati');
+    } else {
+      await db.query(`
+        ALTER TABLE batch_deliveries
+        ADD COLUMN nomor_hp_pic VARCHAR(30) NULL AFTER nama_pic_penerima
+      `);
+      console.log('✅ nomor_hp_pic added to batch_deliveries');
+      results.push('nomor_hp_pic berhasil ditambahkan');
+    }
+
+    return res.json({ success: true, message: results.join('; ') });
+  } catch (error) {
+    console.error('❌ Migration 020 error:', error);
+    return res.status(500).json({ success: false, message: 'Migration failed', error: error.message });
+  }
+});
+
+/**
  * GET /api/admin/reset-delivery?npp=22214381&status=assigned&driver_id=45
  * Reset batch_deliveries record for testing purposes
  * status default: pending, optional: assigned

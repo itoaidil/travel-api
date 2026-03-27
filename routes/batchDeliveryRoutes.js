@@ -1,6 +1,37 @@
 const express = require('express');
 const router = express.Router();
 
+async function ensureBatchDeliveryPicColumns(db) {
+  const [kabupatenColumn] = await db.query(
+    'SHOW COLUMNS FROM batch_deliveries LIKE ?',
+    ['nama_kabupaten']
+  );
+  const namePicPosition = kabupatenColumn.length > 0 ? 'AFTER nama_kabupaten' : 'AFTER kawasan';
+
+  const requiredColumns = [
+    {
+      name: 'nama_pic_penerima',
+      definition: `VARCHAR(150) NULL ${namePicPosition}`,
+    },
+    {
+      name: 'nomor_hp_pic',
+      definition: 'VARCHAR(30) NULL AFTER nama_pic_penerima',
+    },
+  ];
+
+  for (const column of requiredColumns) {
+    const [existing] = await db.query(
+      'SHOW COLUMNS FROM batch_deliveries LIKE ?',
+      [column.name]
+    );
+    if (existing.length === 0) {
+      await db.query(
+        `ALTER TABLE batch_deliveries ADD COLUMN ${column.name} ${column.definition}`
+      );
+    }
+  }
+}
+
 /**
  * POST /api/batch-delivery/import
  * Bulk insert geocoded addresses into batch_deliveries table.
@@ -12,6 +43,7 @@ router.post('/import', async (req, res) => {
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const { packages } = req.body;
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
       return res.status(400).json({ success: false, message: 'packages array is required' });
@@ -30,9 +62,21 @@ router.post('/import', async (req, res) => {
         const lat = parseFloat(pkg.lat) || 0;
         const lng = parseFloat(pkg.lng) || 0;
         const [result] = await db.query(
-          `INSERT IGNORE INTO batch_deliveries (row_no, npp, recipient_address, lat, lng, penerima)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [pkg.no || null, pkg.npp, pkg.address || '', lat, lng, pkg.penerima || null]
+          `INSERT IGNORE INTO batch_deliveries (
+             row_no, npp, recipient_address, lat, lng, penerima,
+             nama_pic_penerima, nomor_hp_pic
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            pkg.no || null,
+            pkg.npp,
+            pkg.address || '',
+            lat,
+            lng,
+            pkg.penerima || null,
+            pkg.nama_pic_penerima || pkg.nama_pic || null,
+            pkg.nomor_hp_pic || pkg.no_hp_pic || pkg.nomor_pic || null,
+          ]
         );
         if (result.affectedRows > 0 && result.insertId) {
           // Set batch_code now that we have the id
@@ -103,6 +147,7 @@ router.get('/driver/:driverId', async (req, res) => {
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const { driverId } = req.params;
     const { status, page = 1, limit = 100 } = req.query;
     const where = ['driver_id = ?'];
@@ -114,8 +159,9 @@ router.get('/driver/:driverId', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const [rows] = await db.query(
-      `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
-              penerima, batch_code, kawasan, delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
+            `SELECT id, row_no, npp, recipient_address, lat, lng, wave, status,
+              penerima, batch_code, kawasan, nama_pic_penerima, nomor_hp_pic,
+              delivery_photo_url, driver_notes, assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -154,6 +200,7 @@ router.get('/:id', async (req, res) => {
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const [rows] = await db.query(
       `SELECT * FROM batch_deliveries WHERE id = ?`,
       [req.params.id]
@@ -258,6 +305,7 @@ router.get('/list', async (req, res) => {
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const { status, wave, driver_id, no_coords, page = 1, limit = 50 } = req.query;
     const where = [];
     const params = [];
@@ -271,8 +319,9 @@ router.get('/list', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const [rows] = await db.query(
-      `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
-              penerima, batch_code, kawasan, delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
+            `SELECT id, row_no, npp, recipient_address, lat, lng, wave, driver_id, status,
+              penerima, batch_code, kawasan, nama_pic_penerima, nomor_hp_pic,
+              delivery_photo_url, driver_notes, assigned_at, delivered_at, created_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
        LIMIT ? OFFSET ?`,
@@ -299,11 +348,13 @@ router.get('/track/:npp', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const { npp } = req.params;
     const [rows] = await db.query(
       `SELECT id, row_no, npp, recipient_address,
               lat, lng, wave, driver_id, status,
-              penerima, batch_code, kawasan, delivery_photo_url, driver_notes,
+              penerima, batch_code, kawasan, nama_pic_penerima, nomor_hp_pic,
+              delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries WHERE npp = ?`,
       [npp]
@@ -325,6 +376,7 @@ router.get('/customer/:customerId', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
   try {
+    await ensureBatchDeliveryPicColumns(db);
     const { customerId } = req.params;
     const { page = 1, limit = 20, status } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -335,8 +387,9 @@ router.get('/customer/:customerId', async (req, res) => {
     const whereClause = 'WHERE ' + where.join(' AND ');
 
     const [rows] = await db.query(
-      `SELECT id, row_no, npp, batch_code, penerima, recipient_address,
-              lat, lng, status, kawasan, delivery_photo_url, driver_notes,
+            `SELECT id, row_no, npp, batch_code, penerima, recipient_address,
+              lat, lng, status, kawasan, nama_pic_penerima, nomor_hp_pic,
+              delivery_photo_url, driver_notes,
               assigned_at, delivered_at, updated_at
        FROM batch_deliveries ${whereClause}
        ORDER BY CAST(row_no AS UNSIGNED) ASC
