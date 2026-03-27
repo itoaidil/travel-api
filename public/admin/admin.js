@@ -2,17 +2,21 @@ const API_BASE_URL = 'https://travel-api-production-23ae.up.railway.app';
 // const API_BASE_URL = 'http://localhost:3000';
 
 let currentMode = 'drivers';
+let currentView = 'dashboard';
 let currentReject = { id: null, type: 'driver' };
 let currentFranchiseId = null;
+let jobsCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
-  switchMode('drivers');
+  switchView('dashboard');
 });
 
 function bindEvents() {
-  document.getElementById('moduleDriversBtn').addEventListener('click', () => switchMode('drivers'));
-  document.getElementById('moduleFranchiseBtn').addEventListener('click', () => switchMode('franchise'));
+  document.getElementById('menuDashboardBtn').addEventListener('click', () => switchView('dashboard'));
+  document.getElementById('moduleDriversBtn').addEventListener('click', () => switchView('drivers'));
+  document.getElementById('moduleFranchiseBtn').addEventListener('click', () => switchView('franchise'));
+  document.getElementById('menuJobsBtn').addEventListener('click', () => switchView('jobs'));
 
   document.getElementById('statusFilter').addEventListener('change', loadList);
   document.getElementById('searchInput').addEventListener('input', debounce(loadList, 400));
@@ -22,6 +26,67 @@ function bindEvents() {
   document.getElementById('frSetPendingBtn').addEventListener('click', () => updateFranchiseStatus('pending'));
   document.getElementById('frActivateBtn').addEventListener('click', () => updateFranchiseStatus('active'));
   document.getElementById('frDeactivateBtn').addEventListener('click', () => updateFranchiseStatus('inactive'));
+
+  document.getElementById('saveJobBtn').addEventListener('click', saveJob);
+  document.getElementById('resetJobBtn').addEventListener('click', resetJobForm);
+  document.getElementById('refreshJobsBtn').addEventListener('click', loadJobs);
+  document.getElementById('jobActiveFilter').addEventListener('change', loadJobs);
+}
+
+function switchView(view) {
+  currentView = view;
+  setSidebarButtons(view);
+  setViewVisibility(view);
+
+  if (view === 'dashboard') {
+    document.getElementById('moduleTitle').textContent = 'Dashboard';
+    loadDashboardStats();
+    return;
+  }
+
+  if (view === 'jobs') {
+    document.getElementById('moduleTitle').textContent = 'Data Lowongan';
+    loadJobs();
+    return;
+  }
+
+  switchMode(view);
+}
+
+function setSidebarButtons(view) {
+  const buttonMap = {
+    dashboard: document.getElementById('menuDashboardBtn'),
+    drivers: document.getElementById('moduleDriversBtn'),
+    franchise: document.getElementById('moduleFranchiseBtn'),
+    jobs: document.getElementById('menuJobsBtn'),
+  };
+
+  Object.values(buttonMap).forEach((btn) => btn && btn.classList.remove('active'));
+  if (buttonMap[view]) buttonMap[view].classList.add('active');
+}
+
+function setViewVisibility(view) {
+  const stats = document.getElementById('statsContainer');
+  const controls = document.getElementById('listControlsSection');
+  const listContainer = document.getElementById('driversContainer');
+  const jobsSection = document.getElementById('jobsSection');
+
+  if (view === 'dashboard') {
+    stats.classList.remove('section-hidden');
+    controls.classList.add('section-hidden');
+    listContainer.classList.add('section-hidden');
+    jobsSection.classList.add('section-hidden');
+  } else if (view === 'jobs') {
+    stats.classList.add('section-hidden');
+    controls.classList.add('section-hidden');
+    listContainer.classList.add('section-hidden');
+    jobsSection.classList.remove('section-hidden');
+  } else {
+    stats.classList.remove('section-hidden');
+    controls.classList.remove('section-hidden');
+    listContainer.classList.remove('section-hidden');
+    jobsSection.classList.add('section-hidden');
+  }
 }
 
 function switchMode(mode) {
@@ -38,25 +103,42 @@ function setModuleButtons(mode) {
   const moduleTitle = document.getElementById('moduleTitle');
 
   if (mode === 'drivers') {
-    btnDrivers.classList.add('active');
-    btnDrivers.classList.remove('btn-outline-light');
-    btnDrivers.classList.add('btn-light');
-
-    btnFranchise.classList.remove('active');
-    btnFranchise.classList.remove('btn-light');
-    btnFranchise.classList.add('btn-outline-light');
-
-    moduleTitle.textContent = 'Admin Panel - Drivers';
+    moduleTitle.textContent = 'Approval Driver';
   } else {
-    btnFranchise.classList.add('active');
-    btnFranchise.classList.remove('btn-outline-light');
-    btnFranchise.classList.add('btn-light');
+    moduleTitle.textContent = 'Approval Franchise';
+  }
+}
 
-    btnDrivers.classList.remove('active');
-    btnDrivers.classList.remove('btn-light');
-    btnDrivers.classList.add('btn-outline-light');
+async function loadDashboardStats() {
+  try {
+    const [driverRes, franchiseRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/admin/drivers-stats`),
+      fetch(`${API_BASE_URL}/api/admin/franchise/stats`),
+    ]);
 
-    moduleTitle.textContent = 'Admin Panel - Franchise';
+    const driverData = await driverRes.json();
+    const franchiseData = await franchiseRes.json();
+
+    const ds = driverData.stats || {};
+    const fs = franchiseData.stats || {};
+
+    document.getElementById('statsContainer').innerHTML = `
+      <div class="col-md-6 col-lg-3">
+        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Total Drivers</h6><h2 class="mb-0">${ds.total || 0}</h2></div></div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Driver Pending</h6><h2 class="mb-0 text-warning">${ds.pending || 0}</h2></div></div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Franchise Active</h6><h2 class="mb-0 text-success">${fs.active || 0}</h2></div></div>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Franchise Pending</h6><h2 class="mb-0 text-warning">${fs.pending || 0}</h2></div></div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Error loading dashboard stats:', error);
+    showError('Failed to load dashboard');
   }
 }
 
@@ -168,6 +250,8 @@ function renderFranchiseStats(stats) {
 }
 
 async function loadList() {
+  if (currentView !== 'drivers' && currentView !== 'franchise') return;
+
   const status = document.getElementById('statusFilter').value;
   const search = document.getElementById('searchInput').value.trim();
 
@@ -194,6 +278,132 @@ async function loadList() {
   } catch (error) {
     console.error('Error loading list:', error);
     showError('Failed to load list');
+  }
+}
+
+async function loadJobs() {
+  const tbody = document.getElementById('jobsTableBody');
+  const activeFilter = document.getElementById('jobActiveFilter').value;
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Loading jobs...</td></tr>';
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/jobs/admin/jobs?active=${encodeURIComponent(activeFilter)}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to load jobs');
+
+    jobsCache = data.data || [];
+    renderJobs(jobsCache);
+  } catch (error) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">${error.message}</td></tr>`;
+  }
+}
+
+function renderJobs(items) {
+  const tbody = document.getElementById('jobsTableBody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Belum ada lowongan</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = items.map((job) => {
+    const inactiveClass = job.is_active ? '' : 'job-row-inactive';
+    return `
+      <tr class="${inactiveClass}">
+        <td>${job.id}</td>
+        <td>
+          <div class="fw-semibold">${job.title || '-'}</div>
+          <small class="text-muted">${(job.description || '-').slice(0, 90)}</small>
+        </td>
+        <td>${job.duration || '-'}</td>
+        <td>${job.location || '-'}</td>
+        <td>${job.is_active ? '<span class="badge bg-success-subtle text-success">Active</span>' : '<span class="badge bg-secondary-subtle text-secondary">Inactive</span>'}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary me-1" onclick="editJob(${job.id})">Edit</button>
+          ${job.is_active
+            ? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateJob(${job.id})">Nonaktifkan</button>`
+            : `<button class="btn btn-sm btn-outline-success" onclick="activateJob(${job.id})">Aktifkan</button>`}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function resetJobForm() {
+  document.getElementById('jobIdInput').value = '';
+  document.getElementById('jobTitleInput').value = '';
+  document.getElementById('jobDescriptionInput').value = '';
+  document.getElementById('jobQualificationsInput').value = '';
+  document.getElementById('jobDurationInput').value = '';
+  document.getElementById('jobLocationInput').value = '';
+}
+
+function editJob(jobId) {
+  const job = jobsCache.find((x) => x.id === jobId);
+  if (!job) return;
+  document.getElementById('jobIdInput').value = job.id;
+  document.getElementById('jobTitleInput').value = job.title || '';
+  document.getElementById('jobDescriptionInput').value = job.description || '';
+  document.getElementById('jobQualificationsInput').value = job.qualifications || '';
+  document.getElementById('jobDurationInput').value = job.duration || '';
+  document.getElementById('jobLocationInput').value = job.location || '';
+}
+
+async function saveJob() {
+  const id = document.getElementById('jobIdInput').value;
+  const payload = {
+    title: document.getElementById('jobTitleInput').value.trim(),
+    description: document.getElementById('jobDescriptionInput').value.trim(),
+    qualifications: document.getElementById('jobQualificationsInput').value.trim(),
+    duration: document.getElementById('jobDurationInput').value.trim(),
+    location: document.getElementById('jobLocationInput').value.trim(),
+  };
+
+  if (!payload.title) {
+    showError('Judul lowongan wajib diisi');
+    return;
+  }
+
+  try {
+    const url = id ? `${API_BASE_URL}/api/jobs/admin/${id}` : `${API_BASE_URL}/api/jobs/admin/create`;
+    const method = id ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to save job');
+
+    showSuccess(id ? 'Lowongan berhasil diupdate' : 'Lowongan berhasil ditambahkan');
+    resetJobForm();
+    loadJobs();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function deactivateJob(jobId) {
+  if (!confirm('Nonaktifkan lowongan ini?')) return;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/jobs/admin/${jobId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to deactivate job');
+    showSuccess('Lowongan dinonaktifkan');
+    loadJobs();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function activateJob(jobId) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/jobs/admin/${jobId}/activate`, { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to activate job');
+    showSuccess('Lowongan diaktifkan');
+    loadJobs();
+  } catch (error) {
+    showError(error.message);
   }
 }
 
@@ -723,7 +933,7 @@ async function saveVehicleEdit() {
 
     bootstrap.Modal.getInstance(document.getElementById('editVehicleModal')).hide();
     alert('Data kendaraan berhasil diupdate!');
-    loadData();
+    loadList();
   } catch (err) {
     alert('Error: ' + err.message);
   } finally {
