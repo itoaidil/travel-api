@@ -5,7 +5,9 @@ let currentMode = 'drivers';
 let currentView = 'dashboard';
 let currentReject = { id: null, type: 'driver' };
 let currentFranchiseId = null;
+let currentApplicantId = null;
 let jobsCache = [];
+let applicantsCache = [];
 let driverStatusChartInstance = null;
 let franchiseStatusChartInstance = null;
 
@@ -19,6 +21,7 @@ function bindEvents() {
   document.getElementById('moduleDriversBtn').addEventListener('click', () => switchView('drivers'));
   document.getElementById('moduleFranchiseBtn').addEventListener('click', () => switchView('franchise'));
   document.getElementById('menuJobsBtn').addEventListener('click', () => switchView('jobs'));
+  document.getElementById('menuApplicantsBtn').addEventListener('click', () => switchView('applicants'));
 
   document.getElementById('statusFilter').addEventListener('change', loadList);
   document.getElementById('searchInput').addEventListener('input', debounce(loadList, 400));
@@ -33,6 +36,10 @@ function bindEvents() {
   document.getElementById('resetJobBtn').addEventListener('click', resetJobForm);
   document.getElementById('refreshJobsBtn').addEventListener('click', loadJobs);
   document.getElementById('jobActiveFilter').addEventListener('change', loadJobs);
+
+  document.getElementById('refreshApplicantsBtn').addEventListener('click', loadApplicants);
+  document.getElementById('applicantJobFilter').addEventListener('change', loadApplicants);
+  document.getElementById('applicantStatusFilter').addEventListener('change', loadApplicants);
 }
 
 function switchView(view) {
@@ -52,6 +59,12 @@ function switchView(view) {
     return;
   }
 
+  if (view === 'applicants') {
+    document.getElementById('moduleTitle').textContent = 'Daftar Pelamar';
+    loadApplicants();
+    return;
+  }
+
   switchMode(view);
 }
 
@@ -61,6 +74,7 @@ function setSidebarButtons(view) {
     drivers: document.getElementById('moduleDriversBtn'),
     franchise: document.getElementById('moduleFranchiseBtn'),
     jobs: document.getElementById('menuJobsBtn'),
+    applicants: document.getElementById('menuApplicantsBtn'),
   };
 
   Object.values(buttonMap).forEach((btn) => btn && btn.classList.remove('active'));
@@ -73,25 +87,24 @@ function setViewVisibility(view) {
   const controls = document.getElementById('listControlsSection');
   const listContainer = document.getElementById('driversContainer');
   const jobsSection = document.getElementById('jobsSection');
+  const applicantsSection = document.getElementById('applicantsSection');
+
+  // Hide all first
+  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection].forEach(
+    (el) => el.classList.add('section-hidden')
+  );
 
   if (view === 'dashboard') {
     stats.classList.remove('section-hidden');
     dashboardCharts.classList.remove('section-hidden');
-    controls.classList.add('section-hidden');
-    listContainer.classList.add('section-hidden');
-    jobsSection.classList.add('section-hidden');
   } else if (view === 'jobs') {
-    stats.classList.add('section-hidden');
-    dashboardCharts.classList.add('section-hidden');
-    controls.classList.add('section-hidden');
-    listContainer.classList.add('section-hidden');
     jobsSection.classList.remove('section-hidden');
+  } else if (view === 'applicants') {
+    applicantsSection.classList.remove('section-hidden');
   } else {
     stats.classList.remove('section-hidden');
-    dashboardCharts.classList.add('section-hidden');
     controls.classList.remove('section-hidden');
     listContainer.classList.remove('section-hidden');
-    jobsSection.classList.add('section-hidden');
   }
 }
 
@@ -1055,5 +1068,152 @@ async function saveVehicleEdit() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
+  }
+}
+
+// =============================================
+// DAFTAR PELAMAR
+// =============================================
+
+async function loadApplicants() {
+  const tbody = document.getElementById('applicantsTableBody');
+  const jobFilter = document.getElementById('applicantJobFilter').value;
+  const statusFilter = document.getElementById('applicantStatusFilter').value;
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+
+  try {
+    let url = `${API_BASE_URL}/api/jobs/admin/applications?`;
+    if (jobFilter) url += `job_id=${encodeURIComponent(jobFilter)}&`;
+    if (statusFilter && statusFilter !== 'all') url += `status=${encodeURIComponent(statusFilter)}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to load applicants');
+
+    applicantsCache = data.data || [];
+    populateApplicantJobFilter(applicantsCache);
+    renderApplicants(applicantsCache);
+  } catch (error) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-3">${error.message}</td></tr>`;
+  }
+}
+
+function populateApplicantJobFilter(applicants) {
+  const select = document.getElementById('applicantJobFilter');
+  const currentVal = select.value;
+  const jobMap = {};
+  applicants.forEach((a) => { jobMap[a.job_id] = a.job_title; });
+  const options = ['<option value="">Semua Posisi</option>'];
+  Object.entries(jobMap).forEach(([id, title]) => {
+    options.push(`<option value="${id}" ${String(currentVal) === String(id) ? 'selected' : ''}>${title}</option>`);
+  });
+  select.innerHTML = options.join('');
+}
+
+function renderApplicants(items) {
+  const tbody = document.getElementById('applicantsTableBody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>Belum ada pelamar</td></tr>';
+    return;
+  }
+
+  const statusLabel = { pending: 'Baru', reviewed: 'Diproses', accepted: 'Diterima', rejected: 'Ditolak' };
+  const statusClass = {
+    pending: 'bg-warning text-dark',
+    reviewed: 'bg-info text-white',
+    accepted: 'bg-success text-white',
+    rejected: 'bg-danger text-white',
+  };
+
+  tbody.innerHTML = items.map((a) => `
+    <tr>
+      <td>${a.id}</td>
+      <td class="fw-semibold">${a.full_name || '-'}</td>
+      <td><small>${a.job_title || '-'}</small></td>
+      <td><small>${a.email || '-'}</small></td>
+      <td><small>${a.phone || '-'}</small></td>
+      <td><span class="badge ${statusClass[a.status] || 'bg-secondary'}">${statusLabel[a.status] || a.status}</span></td>
+      <td><small>${formatDate(a.applied_at)}</small></td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="showApplicantDetail(${a.id})">
+          <i class="fas fa-eye"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function showApplicantDetail(applicantId) {
+  const a = applicantsCache.find((x) => x.id === applicantId);
+  if (!a) return;
+
+  currentApplicantId = applicantId;
+
+  const genderMap = { male: 'Laki-laki', female: 'Perempuan', other: 'Lainnya' };
+  const statusLabel = { pending: 'Baru', reviewed: 'Diproses', accepted: 'Diterima', rejected: 'Ditolak' };
+  const statusClass = {
+    pending: 'bg-warning text-dark',
+    reviewed: 'bg-info text-white',
+    accepted: 'bg-success text-white',
+    rejected: 'bg-danger text-white',
+  };
+
+  document.getElementById('apd_full_name').textContent = a.full_name || '-';
+  document.getElementById('apd_email').textContent = a.email || '-';
+  document.getElementById('apd_phone').textContent = a.phone || '-';
+  document.getElementById('apd_gender').textContent = genderMap[a.gender] || a.gender || '-';
+  document.getElementById('apd_edu_level').textContent = a.education_level || '-';
+  document.getElementById('apd_edu_inst').textContent = a.education_institution || '-';
+  document.getElementById('apd_edu_major').textContent = a.education_major || '-';
+  document.getElementById('apd_edu_year').textContent = a.education_year || '-';
+  document.getElementById('apd_edu_gpa').textContent = a.education_gpa || '-';
+  document.getElementById('apd_experience').textContent = a.work_experience || 'Tidak ada pengalaman yang dicantumkan.';
+  document.getElementById('apd_job_title').textContent = a.job_title || '-';
+  document.getElementById('apd_status_badge').innerHTML = `<span class="badge ${statusClass[a.status] || 'bg-secondary'}">${statusLabel[a.status] || a.status}</span>`;
+
+  setDocLink('apd_cv_link', a.cv_url);
+  setDocLink('apd_ktp_link', a.ktp_url);
+  setDocLink('apd_ijazah_link', a.ijazah_url);
+  setDocLink('apd_transcript_link', a.transcript_url);
+  setDocLink('apd_certificate_link', a.certificate_url);
+
+  new bootstrap.Modal(document.getElementById('applicantDetailModal')).show();
+}
+
+function setDocLink(id, url) {
+  const el = document.getElementById(id);
+  if (url) {
+    el.href = url;
+    el.classList.remove('disabled');
+    el.style.opacity = '';
+  } else {
+    el.href = '#';
+    el.classList.add('disabled');
+    el.style.opacity = '0.5';
+  }
+}
+
+async function updateApplicantStatus(status) {
+  if (!currentApplicantId) return;
+  const statusLabel = { pending: 'Baru', reviewed: 'Diproses', accepted: 'Diterima', rejected: 'Ditolak' };
+  if (!confirm(`Ubah status lamaran menjadi "${statusLabel[status]}"?`)) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/jobs/admin/applications/${currentApplicantId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to update status');
+
+    const a = applicantsCache.find((x) => x.id === currentApplicantId);
+    if (a) a.status = status;
+
+    showSuccess(`Status lamaran diubah ke "${statusLabel[status]}"`);
+    bootstrap.Modal.getInstance(document.getElementById('applicantDetailModal')).hide();
+    renderApplicants(applicantsCache);
+  } catch (error) {
+    showError(error.message);
   }
 }

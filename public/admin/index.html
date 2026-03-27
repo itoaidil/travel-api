@@ -409,6 +409,7 @@
                 <button class="menu-btn" id="moduleDriversBtn"><i class="fas fa-id-card me-2"></i>Approval Driver</button>
                 <button class="menu-btn" id="moduleFranchiseBtn"><i class="fas fa-store me-2"></i>Approval Franchise</button>
                 <button class="menu-btn" id="menuJobsBtn"><i class="fas fa-briefcase me-2"></i>Data Lowongan</button>
+                <button class="menu-btn" id="menuApplicantsBtn"><i class="fas fa-users me-2"></i>Daftar Pelamar</button>
                 <div class="sidebar-note">
                     <i class="fas fa-circle-check me-1"></i> Semua data realtime dari API.
                 </div>
@@ -516,6 +517,46 @@
                                         </tr>
                                     </thead>
                                     <tbody id="jobsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="applicantsSection" class="section-hidden">
+                    <div class="card content-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold"><i class="fas fa-users me-2"></i>Daftar Pelamar</span>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <select class="form-select form-select-sm" id="applicantJobFilter" style="min-width:180px">
+                                    <option value="">Semua Posisi</option>
+                                </select>
+                                <select class="form-select form-select-sm" id="applicantStatusFilter" style="width:150px">
+                                    <option value="all">Semua Status</option>
+                                    <option value="pending">Baru</option>
+                                    <option value="reviewed">Diproses</option>
+                                    <option value="accepted">Diterima</option>
+                                    <option value="rejected">Ditolak</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-primary" id="refreshApplicantsBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover job-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:50px">ID</th>
+                                            <th>Nama</th>
+                                            <th>Posisi</th>
+                                            <th>Email</th>
+                                            <th>Telepon</th>
+                                            <th>Status</th>
+                                            <th>Tgl Daftar</th>
+                                            <th style="width:70px">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="applicantsTableBody"></tbody>
                                 </table>
                             </div>
                         </div>
@@ -724,6 +765,58 @@
                     <button type="button" class="btn btn-warning" id="frSetPendingBtn">Set Pending</button>
                     <button type="button" class="btn btn-danger" id="frDeactivateBtn">Deactivate</button>
                     <button type="button" class="btn btn-success" id="frActivateBtn">Activate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="applicantDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background: linear-gradient(120deg, #0f2c5c, #1d3f7a);">
+                    <h5 class="modal-title text-white"><i class="fas fa-file-alt me-2"></i>Detail Lamaran</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user me-2"></i>Identitas</h6>
+                            <div class="mb-2"><small class="text-muted">Nama Lengkap</small><div class="fw-bold" id="apd_full_name">-</div></div>
+                            <div class="mb-2"><small class="text-muted">Email</small><div class="fw-bold" id="apd_email">-</div></div>
+                            <div class="mb-2"><small class="text-muted">Telepon</small><div class="fw-bold" id="apd_phone">-</div></div>
+                            <div class="mb-2"><small class="text-muted">Jenis Kelamin</small><div class="fw-bold" id="apd_gender">-</div></div>
+                            <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-graduation-cap me-2"></i>Pendidikan</h6>
+                            <div class="mb-2"><small class="text-muted">Jenjang</small><div class="fw-bold" id="apd_edu_level">-</div></div>
+                            <div class="mb-2"><small class="text-muted">Institusi</small><div class="fw-bold" id="apd_edu_inst">-</div></div>
+                            <div class="mb-2"><small class="text-muted">Jurusan</small><div class="fw-bold" id="apd_edu_major">-</div></div>
+                            <div class="row mb-2">
+                                <div class="col-6"><small class="text-muted">Tahun Lulus</small><div class="fw-bold" id="apd_edu_year">-</div></div>
+                                <div class="col-6"><small class="text-muted">IPK</small><div class="fw-bold" id="apd_edu_gpa">-</div></div>
+                            </div>
+                            <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-briefcase me-2"></i>Pengalaman Kerja</h6>
+                            <div id="apd_experience" class="text-muted small" style="white-space: pre-wrap;">-</div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-file-upload me-2"></i>Dokumen</h6>
+                            <div class="d-grid gap-2 mb-3">
+                                <a id="apd_cv_link" href="#" target="_blank" class="btn btn-outline-primary btn-sm"><i class="fas fa-file-pdf me-2"></i>Lihat CV</a>
+                                <a id="apd_ktp_link" href="#" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="fas fa-id-card me-2"></i>Lihat KTP</a>
+                                <a id="apd_ijazah_link" href="#" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="fas fa-graduation-cap me-2"></i>Lihat Ijazah</a>
+                                <a id="apd_transcript_link" href="#" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="fas fa-list-alt me-2"></i>Lihat Transkrip</a>
+                                <a id="apd_certificate_link" href="#" target="_blank" class="btn btn-outline-light btn-sm border"><i class="fas fa-certificate me-2"></i>Lihat Sertifikat (opsional)</a>
+                            </div>
+                            <h6 class="border-bottom pb-2 mb-3 mt-2"><i class="fas fa-tasks me-2"></i>Update Status</h6>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="updateApplicantStatus('reviewed')"><i class="fas fa-search me-2"></i>Tandai Diproses</button>
+                                <button class="btn btn-sm btn-success" onclick="updateApplicantStatus('accepted')"><i class="fas fa-check-circle me-2"></i>Terima Lamaran</button>
+                                <button class="btn btn-sm btn-danger" onclick="updateApplicantStatus('rejected')"><i class="fas fa-times-circle me-2"></i>Tolak Lamaran</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <span class="me-auto"><small class="text-muted">Posisi: <strong id="apd_job_title">-</strong> | Status: <span id="apd_status_badge">-</span></small></span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
                 </div>
             </div>
         </div>

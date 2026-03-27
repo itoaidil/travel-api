@@ -294,6 +294,67 @@ router.delete('/admin/:id', async (req, res) => {
 });
 
 /**
+ * GET /api/jobs/admin/applications
+ * Admin: list all applications with full details
+ */
+router.get('/admin/applications', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { job_id, status } = req.query;
+    const where = [];
+    const params = [];
+    if (job_id) { where.push('a.job_id = ?'); params.push(job_id); }
+    if (status && status !== 'all') { where.push('a.status = ?'); params.push(status); }
+    const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+    const [rows] = await db.query(
+      `SELECT a.id, a.job_id, a.full_name, a.email, a.phone, a.gender,
+              a.education_level, a.education_institution, a.education_major,
+              a.education_year, a.education_gpa, a.work_experience,
+              a.cv_url, a.ktp_url, a.ijazah_url, a.transcript_url, a.certificate_url,
+              a.status, a.applied_at,
+              j.title as job_title
+       FROM job_applications a
+       JOIN job_listings j ON j.id = a.job_id
+       ${whereClause}
+       ORDER BY a.applied_at DESC`,
+      params
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * PATCH /api/jobs/admin/applications/:id/status
+ * Admin: update application status
+ */
+router.patch('/admin/applications/:id/status', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const allowed = ['pending', 'reviewed', 'accepted', 'rejected'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Status tidak valid' });
+    }
+    const [result] = await db.query(
+      'UPDATE job_applications SET status = ? WHERE id = ?',
+      [status, id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Lamaran tidak ditemukan' });
+    }
+    res.json({ success: true, message: 'Status berhasil diupdate' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST /api/jobs/admin/:id/activate
  * Admin: activate listing
  */
