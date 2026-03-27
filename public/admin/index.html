@@ -16,6 +16,12 @@
             --brand-cyan: #14b8ff;
             --ink-1: #0f172a;
             --line: #dbe7ff;
+            --topbar-navy: #0f2c5c;
+            --topbar-navy-soft: #1d3f7a;
+            --sidebar-indigo: #1d2748;
+            --sidebar-indigo-deep: #161f3d;
+            --sidebar-text: #cfd9f8;
+            --sidebar-muted: #9fb0e6;
             --success-color: #10b981;
             --danger-color: #ef4444;
             --warning-color: #f59e0b;
@@ -32,9 +38,9 @@
         }
 
         .navbar {
-            background: #ffffff;
-            border-bottom: 1px solid #d9dee6;
-            box-shadow: none;
+            background: linear-gradient(120deg, var(--topbar-navy) 0%, var(--topbar-navy-soft) 100%);
+            border-bottom: 1px solid #1e4a92;
+            box-shadow: 0 6px 20px rgba(15, 44, 92, 0.2);
             min-height: 56px;
         }
 
@@ -42,8 +48,17 @@
             font-family: 'Space Grotesk', sans-serif;
             font-weight: 700;
             letter-spacing: 0.01em;
-            color: #2f3542;
+            color: #f8fbff;
             font-size: 1.05rem;
+        }
+
+        .navbar .text-secondary {
+            color: #d5e4ff !important;
+        }
+
+        .navbar .btn-warning {
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
         }
 
         .admin-shell {
@@ -55,18 +70,18 @@
 
         .admin-sidebar {
             padding: 0.8rem 0.6rem;
-            border-right: 1px solid #454d55;
-            background: #343a40;
-            box-shadow: none;
+            border-right: 1px solid #314273;
+            background: linear-gradient(180deg, var(--sidebar-indigo) 0%, var(--sidebar-indigo-deep) 100%);
+            box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
         }
 
         .sidebar-brand {
-            border: 1px solid #4b545c;
+            border: 1px solid #334572;
             border-radius: 8px;
             padding: 0.65rem;
             margin-bottom: 0.75rem;
-            background: #2c3136;
-            color: #d2d8de;
+            background: rgba(104, 140, 228, 0.12);
+            color: var(--sidebar-text);
         }
 
         .sidebar-brand .title {
@@ -77,14 +92,14 @@
 
         .sidebar-brand .sub {
             font-size: 0.78rem;
-            color: #c7dcff;
+            color: #b9caf6;
         }
 
         .menu-title {
             margin-bottom: 0.7rem;
             padding: 0.2rem 0.45rem;
-            border-bottom: 1px solid #4b545c;
-            color: #9da6af;
+            border-bottom: 1px solid #334572;
+            color: #8ea2da;
             font-size: 0.72rem;
             font-weight: 700;
             letter-spacing: 0.12em;
@@ -94,35 +109,35 @@
         .menu-btn {
             width: 100%;
             text-align: left;
-            border: 1px solid #4b545c;
+            border: 1px solid #334572;
             border-radius: 8px;
             padding: 0.62rem 0.72rem;
             margin-bottom: 0.55rem;
-            background: #343a40;
-            color: #c2c7d0;
+            background: rgba(17, 31, 65, 0.72);
+            color: var(--sidebar-text);
             font-weight: 600;
             transition: all 0.18s ease;
         }
 
         .menu-btn:hover {
             color: #fff;
-            border-color: #5c6670;
+            border-color: #4f67a5;
             transform: translateX(1px);
-            background: #3a4047;
+            background: rgba(53, 82, 151, 0.48);
         }
 
         .menu-btn.active {
             color: #fff;
-            border-color: #2f8bff;
-            background: #007bff;
-            box-shadow: none;
+            border-color: #66b2ff;
+            background: linear-gradient(90deg, #1f78ff 0%, #31a8ff 100%);
+            box-shadow: 0 10px 20px rgba(20, 98, 214, 0.32);
         }
 
         .sidebar-note {
             margin-top: 0.85rem;
             font-size: 0.73rem;
-            color: #8aa2b8;
-            border-top: 1px dashed #4b545c;
+            color: var(--sidebar-muted);
+            border-top: 1px dashed #334572;
             padding-top: 0.75rem;
         }
 
