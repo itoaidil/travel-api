@@ -40,6 +40,9 @@ async function ensureTables(db) {
       work_experience TEXT,
       -- Dokumen (Cloudinary URLs)
       cv_url VARCHAR(512),
+      ktp_url VARCHAR(512),
+      ijazah_url VARCHAR(512),
+      transcript_url VARCHAR(512),
       certificate_url VARCHAR(512),
       -- Status
       status ENUM('pending','reviewed','accepted','rejected') DEFAULT 'pending',
@@ -50,6 +53,19 @@ async function ensureTables(db) {
       INDEX idx_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+
+  const requiredDocColumns = [
+    { name: 'ktp_url', definition: 'VARCHAR(512) NULL' },
+    { name: 'ijazah_url', definition: 'VARCHAR(512) NULL' },
+    { name: 'transcript_url', definition: 'VARCHAR(512) NULL' },
+  ];
+
+  for (const column of requiredDocColumns) {
+    const [existing] = await db.query('SHOW COLUMNS FROM job_applications LIKE ?', [column.name]);
+    if (existing.length === 0) {
+      await db.query(`ALTER TABLE job_applications ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
 }
 
 /**
@@ -84,11 +100,18 @@ router.post('/apply', async (req, res) => {
     const {
       job_id, full_name, email, phone, address, birth_date, gender,
       education_level, education_institution, education_major, education_year, education_gpa,
-      work_experience, cv_url, certificate_url
+      work_experience, cv_url, ktp_url, ijazah_url, transcript_url, certificate_url
     } = req.body;
 
     if (!job_id || !full_name || !email) {
       return res.status(400).json({ success: false, message: 'job_id, full_name, dan email wajib diisi' });
+    }
+
+    if (!cv_url || !ktp_url || !ijazah_url || !transcript_url) {
+      return res.status(400).json({
+        success: false,
+        message: 'CV, KTP, Ijazah, dan Transkrip Nilai wajib diupload'
+      });
     }
 
     // Validate email format
@@ -110,15 +133,20 @@ router.post('/apply', async (req, res) => {
       `INSERT INTO job_applications
        (job_id, full_name, email, phone, address, birth_date, gender,
         education_level, education_institution, education_major, education_year, education_gpa,
-        work_experience, cv_url, certificate_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        work_experience, cv_url, ktp_url, ijazah_url, transcript_url, certificate_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         job_id, full_name, email,
         phone || null, address || null,
         birth_date || null, gender || null,
         education_level || null, education_institution || null,
         education_major || null, education_year || null, education_gpa || null,
-        work_experience || null, cv_url || null, certificate_url || null
+        work_experience || null,
+        cv_url || null,
+        ktp_url || null,
+        ijazah_url || null,
+        transcript_url || null,
+        certificate_url || null
       ]
     );
 
