@@ -155,6 +155,78 @@
             box-shadow: 0 2px 12px rgba(32, 44, 69, 0.08);
         }
 
+        .small-stat {
+            color: #ffffff;
+            min-height: 120px;
+            border: none;
+            overflow: hidden;
+            position: relative;
+            border-radius: 10px;
+        }
+
+        .small-stat .card-body {
+            padding: 0.95rem 1rem;
+        }
+
+        .small-stat h3 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1.1;
+        }
+
+        .small-stat .stat-label {
+            margin-top: 0.25rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .small-stat .stat-icon {
+            position: absolute;
+            right: 0.85rem;
+            top: 0.65rem;
+            font-size: 2.2rem;
+            opacity: 0.24;
+        }
+
+        .small-stat .stat-link {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 0.45rem 0.75rem;
+            text-align: center;
+            font-size: 0.82rem;
+            color: rgba(255, 255, 255, 0.9);
+            background: rgba(0, 0, 0, 0.12);
+        }
+
+        .small-stat.blue { background: #17a2b8; }
+        .small-stat.green { background: #28a745; }
+        .small-stat.yellow { background: #ffc107; color: #1f2937; }
+        .small-stat.red { background: #dc3545; }
+        .small-stat.yellow .stat-link { color: #1f2937; background: rgba(255, 255, 255, 0.25); }
+
+        .chart-card {
+            border-radius: 10px;
+            border: 1px solid #d9dee6;
+            background: #ffffff;
+            box-shadow: none;
+        }
+
+        .chart-head {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 0.7rem 0.85rem;
+            font-weight: 700;
+            color: #374151;
+        }
+
+        .chart-wrap {
+            position: relative;
+            height: 290px;
+            padding: 0.7rem;
+        }
+
         .stats-icon {
             width: 52px;
             height: 52px;
@@ -329,6 +401,25 @@
 
             <main class="admin-main">
                 <div class="row mb-4" id="statsContainer"></div>
+
+                <div class="row g-3 mb-4" id="dashboardChartsSection">
+                    <div class="col-lg-7">
+                        <div class="chart-card h-100">
+                            <div class="chart-head"><i class="fas fa-chart-area me-2"></i>Status Driver</div>
+                            <div class="chart-wrap">
+                                <canvas id="driverStatusChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="chart-card h-100">
+                            <div class="chart-head"><i class="fas fa-chart-pie me-2"></i>Status Franchise</div>
+                            <div class="chart-wrap">
+                                <canvas id="franchiseStatusChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="card content-card mb-4 section-hidden" id="listControlsSection">
                     <div class="card-body">
@@ -624,6 +715,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="admin.js"></script>
 </body>
 </html>

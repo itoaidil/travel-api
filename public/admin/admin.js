@@ -6,6 +6,8 @@ let currentView = 'dashboard';
 let currentReject = { id: null, type: 'driver' };
 let currentFranchiseId = null;
 let jobsCache = [];
+let driverStatusChartInstance = null;
+let franchiseStatusChartInstance = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
@@ -67,22 +69,26 @@ function setSidebarButtons(view) {
 
 function setViewVisibility(view) {
   const stats = document.getElementById('statsContainer');
+  const dashboardCharts = document.getElementById('dashboardChartsSection');
   const controls = document.getElementById('listControlsSection');
   const listContainer = document.getElementById('driversContainer');
   const jobsSection = document.getElementById('jobsSection');
 
   if (view === 'dashboard') {
     stats.classList.remove('section-hidden');
+    dashboardCharts.classList.remove('section-hidden');
     controls.classList.add('section-hidden');
     listContainer.classList.add('section-hidden');
     jobsSection.classList.add('section-hidden');
   } else if (view === 'jobs') {
     stats.classList.add('section-hidden');
+    dashboardCharts.classList.add('section-hidden');
     controls.classList.add('section-hidden');
     listContainer.classList.add('section-hidden');
     jobsSection.classList.remove('section-hidden');
   } else {
     stats.classList.remove('section-hidden');
+    dashboardCharts.classList.add('section-hidden');
     controls.classList.remove('section-hidden');
     listContainer.classList.remove('section-hidden');
     jobsSection.classList.add('section-hidden');
@@ -124,22 +130,132 @@ async function loadDashboardStats() {
 
     document.getElementById('statsContainer').innerHTML = `
       <div class="col-md-6 col-lg-3">
-        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Total Drivers</h6><h2 class="mb-0">${ds.total || 0}</h2></div></div>
+        <div class="card small-stat blue">
+          <div class="card-body">
+            <h3>${ds.total || 0}</h3>
+            <div class="stat-label">Total Drivers</div>
+            <div class="stat-icon"><i class="fas fa-user-plus"></i></div>
+            <div class="stat-link">Overview</div>
+          </div>
+        </div>
       </div>
       <div class="col-md-6 col-lg-3">
-        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Driver Pending</h6><h2 class="mb-0 text-warning">${ds.pending || 0}</h2></div></div>
+        <div class="card small-stat green">
+          <div class="card-body">
+            <h3>${ds.approved || 0}</h3>
+            <div class="stat-label">Driver Approved</div>
+            <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+            <div class="stat-link">Performance</div>
+          </div>
+        </div>
       </div>
       <div class="col-md-6 col-lg-3">
-        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Franchise Active</h6><h2 class="mb-0 text-success">${fs.active || 0}</h2></div></div>
+        <div class="card small-stat yellow">
+          <div class="card-body">
+            <h3>${ds.pending || 0}</h3>
+            <div class="stat-label">Driver Pending</div>
+            <div class="stat-icon"><i class="fas fa-user-clock"></i></div>
+            <div class="stat-link">Need Action</div>
+          </div>
+        </div>
       </div>
       <div class="col-md-6 col-lg-3">
-        <div class="card stats-card"><div class="card-body"><h6 class="text-muted mb-1">Franchise Pending</h6><h2 class="mb-0 text-warning">${fs.pending || 0}</h2></div></div>
+        <div class="card small-stat red">
+          <div class="card-body">
+            <h3>${fs.active || 0}</h3>
+            <div class="stat-label">Franchise Active</div>
+            <div class="stat-icon"><i class="fas fa-store"></i></div>
+            <div class="stat-link">Franchise</div>
+          </div>
+        </div>
       </div>
     `;
+
+    renderDashboardCharts(ds, fs);
   } catch (error) {
     console.error('Error loading dashboard stats:', error);
     showError('Failed to load dashboard');
   }
+}
+
+function renderDashboardCharts(driverStats, franchiseStats) {
+  if (typeof Chart === 'undefined') return;
+
+  const driverCanvas = document.getElementById('driverStatusChart');
+  const franchiseCanvas = document.getElementById('franchiseStatusChart');
+  if (!driverCanvas || !franchiseCanvas) return;
+
+  const driverData = [
+    Number(driverStats.pending || 0),
+    Number(driverStats.approved || 0),
+    Number(driverStats.rejected || 0),
+  ];
+
+  const franchiseData = [
+    Number(franchiseStats.pending || 0),
+    Number(franchiseStats.active || 0),
+    Number(franchiseStats.inactive || 0),
+  ];
+
+  if (driverStatusChartInstance) driverStatusChartInstance.destroy();
+  if (franchiseStatusChartInstance) franchiseStatusChartInstance.destroy();
+
+  driverStatusChartInstance = new Chart(driverCanvas, {
+    type: 'bar',
+    data: {
+      labels: ['Pending', 'Approved', 'Rejected'],
+      datasets: [{
+        label: 'Driver',
+        data: driverData,
+        backgroundColor: ['#f59e0b', '#10b981', '#ef4444'],
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          grid: { color: '#edf2f7' },
+        },
+        x: {
+          grid: { display: false },
+        },
+      },
+    },
+  });
+
+  franchiseStatusChartInstance = new Chart(franchiseCanvas, {
+    type: 'doughnut',
+    data: {
+      labels: ['Pending', 'Active', 'Inactive'],
+      datasets: [{
+        data: franchiseData,
+        backgroundColor: ['#f59e0b', '#0ea5e9', '#ef4444'],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 12,
+            usePointStyle: true,
+            pointStyle: 'circle',
+          },
+        },
+      },
+    },
+  });
 }
 
 function setupFilterForMode(mode) {
