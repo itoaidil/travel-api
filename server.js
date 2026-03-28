@@ -65,6 +65,9 @@ app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat i
 // Promo endpoints (popup dinamis customer app)
 app.use('/api/promo', require('./routes/promoRoutes')); // GET /api/promo/active
 
+// Pricing endpoints (fare estimate with promo applied)
+app.use('/api/pricing', require('./routes/pricingRoutes')); // GET /api/pricing/calculate
+
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
 app.use('/api/batch-delivery', require('./routes/batchDeliveryRoutes')); // Corporate Batch Delivery import
