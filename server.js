@@ -62,6 +62,9 @@ app.use('/api/notifications', require('./routes/notificationRoutes')); // FCM to
 // Upload endpoints (for photo uploads)
 app.use('/api/upload', require('./routes/uploadRoutes')); // Item photos, chat images, profile photos
 
+// Promo endpoints (popup dinamis customer app)
+app.use('/api/promo', require('./routes/promoRoutes')); // GET /api/promo/active
+
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
 app.use('/api/batch-delivery', require('./routes/batchDeliveryRoutes')); // Corporate Batch Delivery import
@@ -339,6 +342,51 @@ async function ensureStartupTables() {
     console.log('✅ Table verified: franchise_admin_users');
   } catch (error) {
     console.error('❌ Failed to verify franchise_admin_users table:', error.message);
+  }
+
+  // Migration 024: promo_rules + promo_usage tables
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS promo_rules (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        promo_code VARCHAR(64) NOT NULL UNIQUE,
+        promo_name VARCHAR(255) NOT NULL,
+        service_type VARCHAR(50) NOT NULL,
+        promo_type ENUM('free_fare', 'fixed', 'percentage') NOT NULL DEFAULT 'free_fare',
+        promo_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+        max_distance_km DECIMAL(8,2) NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        start_at DATETIME NOT NULL,
+        end_at DATETIME NOT NULL,
+        notes TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_promo_active_time (is_active, start_at, end_at),
+        INDEX idx_promo_service (service_type)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS promo_usage (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        promo_id INT NOT NULL,
+        booking_id INT NOT NULL,
+        customer_id INT NOT NULL,
+        service_type VARCHAR(50) NOT NULL,
+        distance_km DECIMAL(8,2) NOT NULL DEFAULT 0,
+        normal_fare DECIMAL(10,2) NOT NULL DEFAULT 0,
+        final_fare DECIMAL(10,2) NOT NULL DEFAULT 0,
+        discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_usage_promo (promo_id),
+        INDEX idx_usage_booking (booking_id),
+        INDEX idx_usage_customer_time (customer_id, used_at),
+        CONSTRAINT fk_promo_usage_promo FOREIGN KEY (promo_id) REFERENCES promo_rules(id) ON DELETE CASCADE,
+        CONSTRAINT fk_promo_usage_booking FOREIGN KEY (booking_id) REFERENCES independent_bookings(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    console.log('✅ Tables verified: promo_rules, promo_usage');
+  } catch (error) {
+    console.error('❌ Failed to verify promo tables:', error.message);
   }
 }
 
