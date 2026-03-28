@@ -70,20 +70,21 @@ function toPositiveNumber(value, fallback = 0) {
   return parsed < 0 ? 0 : parsed;
 }
 
-async function findActiveDeliveryPromo(dbConn, distanceKm) {
+async function findActiveDeliveryPromo(dbConn, distanceKm, serviceType) {
   try {
     const [rows] = await dbConn.query(
       `SELECT id, promo_code, promo_name, max_distance_km
        FROM promo_rules
        WHERE is_active = 1
-         AND service_type IN ('delivery', 'antar_paket')
+         AND service_type IN ('delivery', 'antar_paket', 'ride', 'antar_penumpang')
+         AND (? IS NULL OR service_type = ?)
          AND promo_type = 'free_fare'
          AND start_at <= NOW()
          AND end_at >= NOW()
          AND (max_distance_km IS NULL OR ? <= max_distance_km)
        ORDER BY max_distance_km ASC, id DESC
        LIMIT 1`,
-      [distanceKm]
+      [serviceType || null, serviceType || null, distanceKm]
     );
     return rows[0] || null;
   } catch (error) {
@@ -269,7 +270,7 @@ router.post('/delivery/create', async (req, res) => {
     let finalFare = normalFare;
 
     if (actualBookingType === 'delivery') {
-      appliedPromo = await findActiveDeliveryPromo(db, distanceKmValue);
+      appliedPromo = await findActiveDeliveryPromo(db, distanceKmValue, actualBookingType);
       if (appliedPromo) {
         discountAmount = normalFare;
         finalFare = 0;

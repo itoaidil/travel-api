@@ -149,6 +149,20 @@ router.post('/seed', async (req, res) => {
       ]
     );
 
+    // Insert for ride (antar penumpang)
+    await db.query(
+      `INSERT INTO promo_rules
+         (promo_code, promo_name, service_type, promo_type, promo_value, max_distance_km, is_active, start_at, end_at, notes)
+       VALUES (?, ?, 'ride', 'free_fare', 0, 5.00, 1, NOW(), ?, ?)
+       ON DUPLICATE KEY UPDATE end_at = VALUES(end_at), is_active = 1, updated_at = NOW()`,
+      [
+        'FREE5KM_RIDE',
+        'Gratis Ongkos Antar Penumpang <= 5 KM',
+        endAt,
+        'Promo customer Rp0, harga normal tercatat untuk payout driver',
+      ]
+    );
+
     return res.json({ success: true, message: 'Promo seeded', end_at: endAt });
   } catch (error) {
     console.error('POST /api/promo/seed error:', error.message);
