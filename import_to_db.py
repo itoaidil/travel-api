@@ -33,6 +33,8 @@ def import_batch():
                     'address': row['address'],
                     'lat':     row.get('lat') or '0',
                     'lng':     row.get('lng') or '0',
+                    'nama_pic_penerima': row.get('nama_pic_penerima') or row.get('nama_pic') or row.get('nama pic penerima') or '',
+                    'nomor_hp_pic': row.get('nomor_hp_pic') or row.get('no_hp_pic') or row.get('nomor hp pic') or '',
                 })
 
     total_pkgs = len(packages)

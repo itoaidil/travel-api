@@ -64,6 +64,71 @@ async function notifyOtherDriversBookingTaken(bookingId, acceptedDriverId, accep
   }
 }
 
+function toPositiveNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed < 0 ? 0 : parsed;
+}
+
+async function findActiveDeliveryPromo(dbConn, distanceKm) {
+  try {
+    const [rows] = await dbConn.query(
+      `SELECT id, promo_code, promo_name, max_distance_km
+       FROM promo_rules
+       WHERE is_active = 1
+         AND service_type IN ('delivery', 'antar_paket')
+         AND promo_type = 'free_fare'
+         AND start_at <= NOW()
+         AND end_at >= NOW()
+         AND (max_distance_km IS NULL OR ? <= max_distance_km)
+       ORDER BY max_distance_km ASC, id DESC
+       LIMIT 1`,
+      [distanceKm]
+    );
+    return rows[0] || null;
+  } catch (error) {
+    if (error && error.code === 'ER_NO_SUCH_TABLE') {
+      // Promo is optional; continue booking flow when promo tables are not deployed yet.
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function recordPromoUsage(dbConn, promo, payload) {
+  if (!promo) return;
+  try {
+    await dbConn.query(
+      `INSERT INTO promo_usage (
+        promo_id,
+        booking_id,
+        customer_id,
+        service_type,
+        distance_km,
+        normal_fare,
+        final_fare,
+        discount_amount,
+        used_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        promo.id,
+        payload.bookingId,
+        payload.customerId,
+        payload.serviceType,
+        payload.distanceKm,
+        payload.normalFare,
+        payload.finalFare,
+        payload.discountAmount,
+      ]
+    );
+  } catch (error) {
+    if (error && error.code === 'ER_NO_SUCH_TABLE') {
+      return;
+    }
+    throw error;
+  }
+}
+
 /**
  * POST /api/bookings/delivery/create
  * Create a new delivery booking (antar paket)
@@ -196,6 +261,21 @@ router.post('/delivery/create', async (req, res) => {
       actualBookingType = 'ride'; // instant ride motor/passenger
     }
 
+    const distanceKmValue = toPositiveNumber(distance_km, 0);
+    const normalFare = toPositiveNumber(total_fare, 0);
+
+    let appliedPromo = null;
+    let discountAmount = 0;
+    let finalFare = normalFare;
+
+    if (actualBookingType === 'delivery') {
+      appliedPromo = await findActiveDeliveryPromo(db, distanceKmValue);
+      if (appliedPromo) {
+        discountAmount = normalFare;
+        finalFare = 0;
+      }
+    }
+
     // Insert booking into independent_bookings table
     const insertQuery = `
       INSERT INTO independent_bookings (
@@ -262,10 +342,10 @@ router.post('/delivery/create', async (req, res) => {
       dropoff_address,       // 12
       dropoff_lat,           // 13
       dropoff_lng,           // 14
-      distance_km,           // 15
-      total_fare,            // 16
-      total_fare,            // 17 (base_price = total_fare)
-      total_fare,            // 18 (total_price = total_fare)
+      distanceKmValue,       // 15
+      normalFare,            // 16 (total_fare keeps normal fare for driver payout)
+      normalFare,            // 17 (base_price keeps normal fare)
+      finalFare,             // 18 (customer payable after promo)
       item_size,             // 19
       item_type,             // 20
       item_photo_url,        // 21
@@ -280,10 +360,21 @@ router.post('/delivery/create', async (req, res) => {
 
     const bookingId = result.insertId;
 
+    await recordPromoUsage(db, appliedPromo, {
+      bookingId,
+      customerId: customer_id,
+      serviceType: actualBookingType,
+      distanceKm: distanceKmValue,
+      normalFare,
+      finalFare,
+      discountAmount,
+    });
+
     console.log('✅ Delivery booking created:', {
       booking_id: bookingId,
       booking_code: bookingCode,
-      payment_status: paymentStatus
+      payment_status: paymentStatus,
+      promo_applied: Boolean(appliedPromo)
     });
 
     // Lookup franchise partner by pickup_address matching kabupaten coverage area
@@ -402,7 +493,7 @@ router.post('/delivery/create', async (req, res) => {
                       pickup_address,
                       dropoff_address,
                       distance_km,
-                      total_price: total_fare,
+                      total_price: normalFare,
                       item_type,
                       item_size,
                       customer_name: customerName
@@ -442,8 +533,13 @@ router.post('/delivery/create', async (req, res) => {
         vehicle_type,
         pickup_address,
         dropoff_address,
-        distance_km,
-        total_fare,
+        distance_km: distanceKmValue,
+        total_fare: normalFare,
+        discount_amount: discountAmount,
+        final_fare: finalFare,
+        promo_applied: Boolean(appliedPromo),
+        promo_code: appliedPromo ? appliedPromo.promo_code : null,
+        promo_name: appliedPromo ? appliedPromo.promo_name : null,
         payment_status: paymentStatus,
         status: bookingStatus
       }
