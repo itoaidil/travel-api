@@ -149,13 +149,23 @@ router.post('/respond', async (req, res) => {
         [booking_id, driver_id, offer.wave_number, reason]
       );
 
-      // Update driver stats
-      await connection.query(
-        `UPDATE independent_drivers 
-         SET total_rejections = total_rejections + 1
-         WHERE driver_id = ?`,
-        [driver_id]
-      );
+      // Update driver stats if optional analytics column exists.
+      // Do not fail reject flow when legacy schema lacks total_rejections.
+      try {
+        await connection.query(
+          `UPDATE independent_drivers
+           SET total_rejections = COALESCE(total_rejections, 0) + 1,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [driver_id]
+        );
+      } catch (error) {
+        if (error && error.code === 'ER_BAD_FIELD_ERROR') {
+          console.warn('⚠️ Skip total_rejections update: column not found in independent_drivers');
+        } else {
+          throw error;
+        }
+      }
 
       await connection.commit();
 

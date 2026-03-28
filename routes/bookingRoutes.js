@@ -6,6 +6,30 @@ const {
   sendBookingTakenNotificationToDriver,
 } = require('../services/notificationService');
 
+let hasTotalRejectionsColumnCache = null;
+
+async function hasTotalRejectionsColumn(dbConn) {
+  if (hasTotalRejectionsColumnCache !== null) {
+    return hasTotalRejectionsColumnCache;
+  }
+
+  try {
+    const [rows] = await dbConn.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'independent_drivers'
+         AND column_name = 'total_rejections'
+       LIMIT 1`
+    );
+    hasTotalRejectionsColumnCache = rows.length > 0;
+  } catch (_) {
+    hasTotalRejectionsColumnCache = false;
+  }
+
+  return hasTotalRejectionsColumnCache;
+}
+
 async function notifyOtherDriversBookingTaken(bookingId, acceptedDriverId, acceptedDriverName) {
   try {
     const [otherDrivers] = await db.query(
@@ -269,7 +293,7 @@ router.post('/delivery/create', async (req, res) => {
     let discountAmount = 0;
     let finalFare = normalFare;
 
-    if (actualBookingType === 'delivery') {
+    if (['delivery', 'ride', 'cargo'].includes(actualBookingType)) {
       appliedPromo = await findActiveDeliveryPromo(db, distanceKmValue, actualBookingType);
       if (appliedPromo) {
         discountAmount = normalFare;
@@ -1029,17 +1053,19 @@ router.post('/:booking_id/reject', async (req, res) => {
       console.warn('⚠️ Could not save driver rejection record:', error.message);
     }
 
-    // Update driver rejection stats when column exists
-    try {
-      await db.query(
-        `UPDATE independent_drivers
-         SET total_rejections = COALESCE(total_rejections, 0) + 1,
-             updated_at = NOW()
-         WHERE id = ?`,
-        [driver_id]
-      );
-    } catch (error) {
-      console.warn('⚠️ Could not update total_rejections:', error.message);
+    // Update rejection stats only when optional analytics column is available.
+    if (await hasTotalRejectionsColumn(db)) {
+      try {
+        await db.query(
+          `UPDATE independent_drivers
+           SET total_rejections = COALESCE(total_rejections, 0) + 1,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [driver_id]
+        );
+      } catch (error) {
+        console.warn('⚠️ Could not update total_rejections:', error.message);
+      }
     }
 
     // End customer search immediately when driver rejects this offer.
@@ -1326,15 +1352,20 @@ router.post('/:booking_id/complete', async (req, res) => {
       console.log(`🏢 Franchise partner ${booking.franchise_partner_id}: commission ${franchiseFeePercentage}%`);
     }
 
-    // Calculate earnings based on database percentages
-    // Driver % is unchanged; franchise takes a slice from the platform's share
-    const totalPrice = parseFloat(booking.total_price) || 0;
-    const driverEarnings = (totalPrice * driverPercentage) / 100;
-    const franchiseFeeAmount = (totalPrice * franchiseFeePercentage) / 100;
-    const effectivePlatformFeePercentage = platformFeePercentage - franchiseFeePercentage;
-    const effectivePlatformFee = (totalPrice * effectivePlatformFeePercentage) / 100;
+    // Driver payout must use pre-discount fare so promo is borne by platform.
+    // total_price = customer payable (after promo), total_fare/base_price = normal fare.
+    const customerPayable = parseFloat(booking.total_price) || 0;
+    const payoutBaseFare =
+      parseFloat(booking.total_fare) || parseFloat(booking.base_price) || customerPayable;
 
-    console.log(`💰 Total: ${totalPrice}, Driver: ${driverEarnings} (${driverPercentage}%), Franchise: ${franchiseFeeAmount} (${franchiseFeePercentage}%), Platform: ${effectivePlatformFee} (${effectivePlatformFeePercentage}%)`);
+    // Calculate earnings based on payout base fare.
+    // Driver % is unchanged; franchise takes a slice from the platform's share.
+    const driverEarnings = (payoutBaseFare * driverPercentage) / 100;
+    const franchiseFeeAmount = (payoutBaseFare * franchiseFeePercentage) / 100;
+    const effectivePlatformFeePercentage = platformFeePercentage - franchiseFeePercentage;
+    const effectivePlatformFee = (payoutBaseFare * effectivePlatformFeePercentage) / 100;
+
+    console.log(`💰 FareBase: ${payoutBaseFare}, CustomerPayable: ${customerPayable}, Driver: ${driverEarnings} (${driverPercentage}%), Franchise: ${franchiseFeeAmount} (${franchiseFeePercentage}%), Platform: ${effectivePlatformFee} (${effectivePlatformFeePercentage}%)`);
 
     // Update booking with earnings and status
     await db.query(
@@ -1370,7 +1401,8 @@ router.post('/:booking_id/complete', async (req, res) => {
       data: {
         booking_id: booking_id,
         status: 'completed',
-        total_price: totalPrice,
+        customer_total_price: customerPayable,
+        payout_base_fare: payoutBaseFare,
         driver_earnings: driverEarnings,
         platform_fee: effectivePlatformFee,
         franchise_fee: franchiseFeeAmount,
