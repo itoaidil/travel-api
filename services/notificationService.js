@@ -216,6 +216,18 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
     },
     android: {
       priority: 'high',
+      notification: {
+        sound: 'default',
+        channelId: 'booking_channel',
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+        },
+      },
     },
     tokens: fcmTokens,
   };
