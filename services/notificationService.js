@@ -128,12 +128,10 @@ async function sendNewBookingNotification(fcmToken, bookingData, driverId = null
 
   const message = {
     token: fcmToken,
-    notification: {
-      title: content.title,
-      body: content.body,
-    },
     data: {
       type: 'new_booking',
+      title: content.title,
+      body: content.body,
       booking_id: String(bookingData.booking_id),
       booking_code: bookingData.booking_code || '',
       vehicle_type: bookingData.vehicle_type || '',
@@ -148,6 +146,8 @@ async function sendNewBookingNotification(fcmToken, bookingData, driverId = null
     },
     android: {
       priority: 'high',
+      ttl: 60 * 1000,
+      collapseKey: `booking_${bookingData.booking_id || Date.now()}`,
       notification: {
         sound: 'default',
         channelId: 'booking_channel',
@@ -198,12 +198,10 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
   const content = getNotificationContent(bookingData);
 
   const message = {
-    notification: {
-      title: content.title,
-      body: content.body,
-    },
     data: {
       type: 'new_booking',
+      title: content.title,
+      body: content.body,
       booking_id: String(bookingData.booking_id),
       booking_code: bookingData.booking_code || '',
       vehicle_type: bookingData.vehicle_type || '',
@@ -216,6 +214,8 @@ async function sendNotificationToMultipleDrivers(fcmTokens, bookingData) {
     },
     android: {
       priority: 'high',
+      ttl: 60 * 1000,
+      collapseKey: `booking_${bookingData.booking_id || Date.now()}`,
       notification: {
         sound: 'default',
         channelId: 'booking_channel',
