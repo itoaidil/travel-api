@@ -94,6 +94,46 @@ function toPositiveNumber(value, fallback = 0) {
   return parsed < 0 ? 0 : parsed;
 }
 
+// Default pricing — mirrors pricingRoutes.js defaults
+const _DEFAULT_PRICING = {
+  ride:     { base_fare: 5000, per_km: 3000 },
+  delivery: { base_fare: 5000, per_km: 3000 },
+  cargo:    { base_fare: 10000, per_km: 4000 },
+};
+
+/**
+ * Resolve the pre-discount normal fare for driver payout.
+ * If the client sends a positive total_fare, use it directly (it may already be
+ * the normal fare). If it is 0 or missing (client sent post-promo price = 0),
+ * calculate server-side from service_vehicle_pricing, falling back to hardcoded
+ * defaults. This prevents driver_earnings = 0 when a promo is active.
+ */
+async function resolveNormalFare(dbConn, clientFare, vehicleType, bookingType, distanceKm) {
+  const clientValue = toPositiveNumber(clientFare, 0);
+  if (clientValue > 0) return clientValue;
+
+  // Client sent 0 — promo was likely applied before submission. Calculate server-side.
+  const serviceCode = bookingType === 'cargo' ? 'cargo' : bookingType === 'ride' ? 'ride' : 'delivery';
+  try {
+    const [rows] = await dbConn.query(
+      `SELECT base_fare, per_km_rate FROM service_vehicle_pricing
+       WHERE (service_code = ? OR vehicle_type = ?) AND is_active = 1
+       LIMIT 1`,
+      [serviceCode, vehicleType]
+    );
+    if (rows.length > 0 && rows[0].base_fare != null) {
+      return Math.round(
+        parseFloat(rows[0].base_fare) + distanceKm * parseFloat(rows[0].per_km_rate || 3000)
+      );
+    }
+  } catch (_) {
+    // Pricing table unavailable — use hardcoded default
+  }
+
+  const d = _DEFAULT_PRICING[serviceCode] || _DEFAULT_PRICING.delivery;
+  return Math.round(d.base_fare + distanceKm * d.per_km);
+}
+
 async function findActiveDeliveryPromo(dbConn, distanceKm, serviceType) {
   try {
     const [rows] = await dbConn.query(
@@ -287,7 +327,9 @@ router.post('/delivery/create', async (req, res) => {
     }
 
     const distanceKmValue = toPositiveNumber(distance_km, 0);
-    const normalFare = toPositiveNumber(total_fare, 0);
+    // resolveNormalFare: if client sends 0 (promo applied before submit), recalculate
+    // server-side so driver's payout base is always the real pre-discount fare.
+    const normalFare = await resolveNormalFare(db, total_fare, vehicle_type, actualBookingType, distanceKmValue);
 
     let appliedPromo = null;
     let discountAmount = 0;
@@ -300,6 +342,8 @@ router.post('/delivery/create', async (req, res) => {
         finalFare = 0;
       }
     }
+
+    console.log(`💵 Fare resolved: normalFare=${normalFare}, finalFare=${finalFare} (clientSent=${total_fare}), bookingType=${actualBookingType}`);
 
     // Insert booking into independent_bookings table
     const insertQuery = `
