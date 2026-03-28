@@ -6,7 +6,14 @@ export default defineConfig({
   base: '/franchise_admin/',
   build: {
     outDir: '../public/franchise_admin',
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name][extname]'
+      }
+    }
   },
   server: {
     host: true,
