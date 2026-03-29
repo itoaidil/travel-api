@@ -480,3 +480,104 @@ router.get('/:id/route', async (req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * GET /api/batch-delivery/nearest
+ * Hitung paket terdekat dari posisi driver saat ini menggunakan Haversine formula.
+ *
+ * Query params:
+ *   driver_lat  - latitude posisi driver sekarang (required)
+ *   driver_lng  - longitude posisi driver sekarang (required)
+ *   driver_id   - filter hanya paket yang di-assign ke driver ini (optional)
+ *   status      - filter status paket (default: 'assigned') - bisa multi: assigned,in_progress
+ *   limit       - jumlah hasil yang dikembalikan (default: 10, max: 50)
+ *
+ * Response: array paket diurutkan dari jarak terpendek, dengan field distance_km
+ *
+ * Formula Haversine (radius bumi 6371 km):
+ *   d = 6371 * ACOS(
+ *         COS(RADIANS(driver_lat)) * COS(RADIANS(lat))
+ *         * COS(RADIANS(lng) - RADIANS(driver_lng))
+ *         + SIN(RADIANS(driver_lat)) * SIN(RADIANS(lat))
+ *       )
+ */
+router.get('/nearest', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { driver_lat, driver_lng, driver_id, status, limit = 10 } = req.query;
+
+    if (!driver_lat || !driver_lng) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_lat dan driver_lng wajib diisi',
+      });
+    }
+
+    const lat = parseFloat(driver_lat);
+    const lng = parseFloat(driver_lng);
+    const maxLimit = Math.min(parseInt(limit) || 10, 50);
+
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_lat / driver_lng tidak valid',
+      });
+    }
+
+    // Build WHERE conditions
+    const where = [
+      'lat != 0', // only rows with valid coords
+      'lng != 0',
+    ];
+    const params = [lat, lng, lat]; // used in Haversine SELECT
+
+    // Status filter — default: assigned dan in_progress
+    const statusFilter = status
+      ? status.split(',').map(s => s.trim())
+      : ['assigned', 'in_progress'];
+    where.push(`status IN (${statusFilter.map(() => '?').join(',')})`);
+    params.push(...statusFilter);
+
+    // Driver filter (only packages assigned to this specific driver)
+    if (driver_id) {
+      where.push('driver_id = ?');
+      params.push(parseInt(driver_id));
+    }
+
+    params.push(maxLimit); // for LIMIT
+
+    const whereClause = 'WHERE ' + where.join(' AND ');
+
+    const [rows] = await db.query(
+      `SELECT
+         id, row_no, npp, batch_code, penerima,
+         recipient_address, lat, lng,
+         kawasan, nama_pic_penerima, nomor_hp_pic,
+         status, driver_id, wave,
+         ROUND(
+           6371 * ACOS(
+             COS(RADIANS(?)) * COS(RADIANS(lat))
+             * COS(RADIANS(lng) - RADIANS(?))
+             + SIN(RADIANS(?)) * SIN(RADIANS(lat))
+           ), 3
+         ) AS distance_km
+       FROM batch_deliveries
+       ${whereClause}
+       ORDER BY distance_km ASC
+       LIMIT ?`,
+      params
+    );
+
+    res.json({
+      success: true,
+      driver_position: { lat, lng },
+      total_found: rows.length,
+      data: rows,
+    });
+  } catch (error) {
+    console.error('nearest endpoint error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
