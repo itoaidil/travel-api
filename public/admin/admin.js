@@ -1,6 +1,25 @@
 const API_BASE_URL = 'https://travel-api-production-23ae.up.railway.app';
 // const API_BASE_URL = 'http://localhost:3000';
 
+// ── Auth helpers ────────────────────────────────────────────────────────────
+function getAdminToken() {
+  return localStorage.getItem('hantar_admin_token') || '';
+}
+
+function getAdminAuthHeaders() {
+  const token = getAdminToken();
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+function adminLogout() {
+  localStorage.removeItem('hantar_admin_token');
+  localStorage.removeItem('hantar_admin_token_exp');
+  // Also clear old prompt-based token
+  localStorage.removeItem('exp_seed_token');
+  window.location.replace('/admin/login.html');
+}
+// ── End auth helpers ─────────────────────────────────────────────────────────
+
 let currentMode = 'drivers';
 let currentView = 'dashboard';
 let currentReject = { id: null, type: 'driver' };
@@ -17,6 +36,20 @@ let driverStatusChartInstance = null;
 let franchiseStatusChartInstance = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Show logged-in username in topbar
+  try {
+    const token = getAdminToken();
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const el = document.getElementById('adminUsernameLabel');
+      if (el && payload.username) el.textContent = payload.username;
+    }
+  } catch (_) {}
+
+  // Wire logout button
+  const logoutBtn = document.getElementById('adminLogoutBtn');
+  if (logoutBtn) logoutBtn.addEventListener('click', adminLogout);
+
   bindEvents();
   switchView('dashboard');
 });
@@ -54,8 +87,6 @@ function bindEvents() {
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
   document.getElementById('expReloadPricingBtn').addEventListener('click', loadExpeditionPricingSetup);
-  document.getElementById('expAdminLoginBtn').addEventListener('click', expeditionAdminLogin);
-  document.getElementById('expAdminLogoutBtn').addEventListener('click', expeditionAdminLogout);
   document.getElementById('expCheckWilayahSeedBtn').addEventListener('click', loadExpeditionWilayahSeedStatus);
   document.getElementById('expTriggerWilayahSeedBtn').addEventListener('click', triggerExpeditionWilayahSeed);
   document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
@@ -1563,101 +1594,26 @@ async function loadExpeditionPricingSetup() {
 
     renderExpeditionPricingServices(expeditionPricingServices);
     renderExpeditionMinCharges(expeditionMinCharges);
-    updateExpeditionAdminAuthUi();
-    if (getExpeditionAdminToken()) {
-      await loadExpeditionWilayahSeedStatus(false);
-    }
+    await loadExpeditionWilayahSeedStatus();
   } catch (error) {
     showError(error.message);
   }
 }
 
-function getExpeditionAdminToken() {
-  return String(localStorage.getItem('exp_admin_token') || '').trim();
-}
-
-function updateExpeditionAdminAuthUi() {
-  const hasToken = !!getExpeditionAdminToken();
-  const hintEl = document.getElementById('expWilayahSeedHint');
-  const loginBtn = document.getElementById('expAdminLoginBtn');
-  const logoutBtn = document.getElementById('expAdminLogoutBtn');
-
-  if (loginBtn) loginBtn.classList.toggle('btn-success', !hasToken);
-  if (loginBtn) loginBtn.classList.toggle('btn-outline-dark', hasToken);
-  if (logoutBtn) logoutBtn.disabled = !hasToken;
-
-  if (hintEl && !hasToken) {
-    hintEl.textContent = 'Silakan Login Admin dulu untuk cek/sinkron master wilayah.';
-  }
-}
-
-async function expeditionAdminLogin() {
-  const username = window.prompt('Username Admin Ekspedisi:');
-  if (!username) return false;
-  const password = window.prompt('Password Admin Ekspedisi:');
-  if (!password) return false;
-
-  const res = await fetch(`${API_BASE_URL}/api/expedition/admin/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: String(username).trim(), password: String(password).trim() }),
-  });
-  const data = await res.json();
-  if (!data.success || !data.data?.token) {
-    throw new Error(data.message || 'Login admin gagal');
-  }
-
-  localStorage.setItem('exp_admin_token', data.data.token);
-  updateExpeditionAdminAuthUi();
-  showSuccess('Login admin berhasil');
-  return true;
-}
-
-function expeditionAdminLogout() {
-  localStorage.removeItem('exp_admin_token');
-  updateExpeditionAdminAuthUi();
-  const countsEl = document.getElementById('expWilayahSeedCounts');
-  if (countsEl) countsEl.textContent = 'belum dicek';
-  showSuccess('Logout admin berhasil');
-}
-
-async function ensureExpeditionAdminLogin() {
-  if (getExpeditionAdminToken()) return true;
-  try {
-    return await expeditionAdminLogin();
-  } catch (error) {
-    showError(error.message);
-    return false;
-  }
-}
-
-async function loadExpeditionWilayahSeedStatus(requireLogin = true) {
+async function loadExpeditionWilayahSeedStatus() {
   const countsEl = document.getElementById('expWilayahSeedCounts');
   const hintEl = document.getElementById('expWilayahSeedHint');
   if (!countsEl || !hintEl) return;
 
   try {
-    if (requireLogin) {
-      const ok = await ensureExpeditionAdminLogin();
-      if (!ok) return;
-    }
-
-    const token = getExpeditionAdminToken();
-    if (!token) {
-      countsEl.textContent = 'butuh login';
-      hintEl.textContent = 'Klik Login Admin untuk melihat status master wilayah.';
-      return;
-    }
-
     countsEl.textContent = 'memuat...';
     const res = await fetch(`${API_BASE_URL}/api/expedition/admin/seed-wilayah/status`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { ...getAdminAuthHeaders() },
     });
     const data = await res.json();
     if (res.status === 401) {
-      localStorage.removeItem('exp_admin_token');
-      updateExpeditionAdminAuthUi();
-      throw new Error('Sesi login admin sudah habis, silakan login ulang');
+      adminLogout();
+      return;
     }
     if (!data.success) throw new Error(data.message || 'Gagal cek status wilayah');
 
@@ -1671,11 +1627,6 @@ async function loadExpeditionWilayahSeedStatus(requireLogin = true) {
 }
 
 async function triggerExpeditionWilayahSeed() {
-  const ok = await ensureExpeditionAdminLogin();
-  if (!ok) return;
-  const token = getExpeditionAdminToken();
-  if (!token) return;
-
   const btn = document.getElementById('expTriggerWilayahSeedBtn');
   const hintEl = document.getElementById('expWilayahSeedHint');
   const oldText = btn ? btn.textContent : '';
@@ -1690,15 +1641,14 @@ async function triggerExpeditionWilayahSeed() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        ...getAdminAuthHeaders(),
       },
       body: JSON.stringify({}),
     });
     const data = await res.json();
     if (res.status === 401) {
-      localStorage.removeItem('exp_admin_token');
-      updateExpeditionAdminAuthUi();
-      throw new Error('Sesi login admin sudah habis, silakan login ulang');
+      adminLogout();
+      return;
     }
     if (!data.success) throw new Error(data.message || 'Gagal trigger sinkron wilayah');
 

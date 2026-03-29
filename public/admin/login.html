@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hantar Admin - Login</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --brand-blue: #1154e6;
+      --topbar-navy: #0f2c5c;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: linear-gradient(135deg, #0f2c5c 0%, #1d3f7a 50%, #1154e6 100%);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    .login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-card {
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.28);
+      padding: 2.5rem 2.25rem 2rem;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .login-logo {
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .login-logo .icon-ring {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1154e6, #14b8ff);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 8px 24px rgba(17,84,230,0.35);
+    }
+
+    .login-logo .icon-ring i {
+      font-size: 1.65rem;
+      color: #fff;
+    }
+
+    .login-logo h4 {
+      font-weight: 800;
+      color: #0f2c5c;
+      margin: 0;
+      font-size: 1.18rem;
+    }
+
+    .login-logo p {
+      color: #64748b;
+      margin: 0;
+      font-size: 0.85rem;
+    }
+
+    .form-label {
+      font-weight: 600;
+      font-size: 0.87rem;
+      color: #374151;
+    }
+
+    .form-control {
+      border-radius: 10px;
+      border: 1.5px solid #d1d5db;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.95rem;
+      transition: border-color 0.18s;
+    }
+
+    .form-control:focus {
+      border-color: #1154e6;
+      box-shadow: 0 0 0 0.2rem rgba(17,84,230,0.15);
+    }
+
+    .input-icon-wrap {
+      position: relative;
+    }
+
+    .input-icon-wrap .input-icon {
+      position: absolute;
+      left: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #9ca3af;
+      font-size: 0.95rem;
+      pointer-events: none;
+    }
+
+    .input-icon-wrap .form-control {
+      padding-left: 2.4rem;
+    }
+
+    .toggle-pw {
+      position: absolute;
+      right: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      padding: 0;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+
+    .btn-login {
+      background: linear-gradient(90deg, #1154e6 0%, #1d6fd4 100%);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.72rem;
+      font-weight: 700;
+      font-size: 1rem;
+      width: 100%;
+      margin-top: 0.5rem;
+      box-shadow: 0 6px 18px rgba(17,84,230,0.32);
+      transition: opacity 0.18s, transform 0.12s;
+    }
+
+    .btn-login:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn-login:active { transform: translateY(0); }
+    .btn-login:disabled { opacity: 0.65; transform: none; cursor: not-allowed; }
+
+    .alert-error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      border-radius: 10px;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: #9ca3af;
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="icon-ring"><i class="fas fa-shield-alt"></i></div>
+        <h4>Hantar Admin Panel</h4>
+        <p>Silakan login untuk melanjutkan</p>
+      </div>
+
+      <div class="alert-error" id="loginError">
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <span id="loginErrorMsg">Username atau password salah.</span>
+      </div>
+
+      <form id="loginForm" autocomplete="off" novalidate>
+        <div class="mb-3">
+          <label class="form-label" for="loginUsername">Username</label>
+          <div class="input-icon-wrap">
+            <i class="fas fa-user input-icon"></i>
+            <input type="text" class="form-control" id="loginUsername"
+              placeholder="Masukkan username" autocomplete="username" required>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="loginPassword">Password</label>
+          <div class="input-icon-wrap">
+            <i class="fas fa-lock input-icon"></i>
+            <input type="password" class="form-control" id="loginPassword"
+              placeholder="Masukkan password" autocomplete="current-password" required>
+            <button type="button" class="toggle-pw" id="togglePw" tabindex="-1">
+              <i class="fas fa-eye" id="togglePwIcon"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-login" id="loginBtn">
+          <i class="fas fa-sign-in-alt me-2"></i>Masuk
+        </button>
+      </form>
+
+      <div class="login-footer">
+        &copy; 2026 Primary Line Indonesia &middot; Hantar
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE_URL = 'https://travel-api-production-23ae.up.railway.app';
+
+    // Jika sudah ada token valid, langsung masuk
+    (function checkExisting() {
+      const token = localStorage.getItem('hantar_admin_token');
+      const exp = parseInt(localStorage.getItem('hantar_admin_token_exp') || '0', 10);
+      if (token && Date.now() / 1000 < exp - 30) {
+        window.location.replace('/admin/');
+      }
+    })();
+
+    const form = document.getElementById('loginForm');
+    const btn = document.getElementById('loginBtn');
+    const errorBox = document.getElementById('loginError');
+    const errorMsg = document.getElementById('loginErrorMsg');
+    const togglePw = document.getElementById('togglePw');
+    const togglePwIcon = document.getElementById('togglePwIcon');
+    const passwordInput = document.getElementById('loginPassword');
+
+    togglePw.addEventListener('click', () => {
+      const isHidden = passwordInput.type === 'password';
+      passwordInput.type = isHidden ? 'text' : 'password';
+      togglePwIcon.className = isHidden ? 'fas fa-eye-slash' : 'fas fa-eye';
+    });
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+
+    function hideError() {
+      errorBox.style.display = 'none';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+
+      if (!username || !password) {
+        showError('Username dan password wajib diisi.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/expedition/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+          showError(data.message || 'Username atau password salah.');
+          return;
+        }
+
+        const token = data.data.token;
+        const expiresIn = data.data.expires_in || 43200;
+        const exp = Math.floor(Date.now() / 1000) + expiresIn;
+
+        localStorage.setItem('hantar_admin_token', token);
+        localStorage.setItem('hantar_admin_token_exp', String(exp));
+
+        window.location.replace('/admin/');
+      } catch (err) {
+        showError('Gagal terhubung ke server. Coba lagi.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sign-in-alt me-2"></i>Masuk';
+      }
+    });
+  </script>
+</body>
+</html>
