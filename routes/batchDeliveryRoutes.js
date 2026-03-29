@@ -1,5 +1,126 @@
 const express = require('express');
 const router = express.Router();
+const https = require('https');
+
+// ─────────────────────────────────────────────
+// GEOCODING HELPER (Google Maps Geocoding API)
+// ─────────────────────────────────────────────
+
+/**
+ * Geocode a single address string → { lat, lng } or null.
+ * Uses process.env.GOOGLE_DIRECTIONS_KEY (also valid for Geocoding API).
+ */
+function geocodeAddress(address) {
+  return new Promise((resolve) => {
+    const key = process.env.GOOGLE_DIRECTIONS_KEY;
+    if (!key) return resolve(null);
+
+    const encoded = encodeURIComponent(address);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encoded}&key=${key}`;
+
+    https.get(url, (resp) => {
+      let data = '';
+      resp.on('data', (chunk) => { data += chunk; });
+      resp.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.status === 'OK' && json.results && json.results.length > 0) {
+            const loc = json.results[0].geometry.location;
+            resolve({ lat: loc.lat, lng: loc.lng });
+          } else {
+            resolve(null);
+          }
+        } catch {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+/**
+ * Geocode all packages for a driver that still have lat=0 / lng=0.
+ * Runs concurrently (max 5 at a time) and updates DB.
+ * Fire-and-forget friendly — errors per row are swallowed.
+ *
+ * @param {object} db    - mysql2 pool/connection
+ * @param {number} driverId
+ * @returns {Promise<number>} count of successfully geocoded rows
+ */
+async function geocodeDriverPackages(db, driverId) {
+  const BATCH_SIZE = 5;
+
+  const [rows] = await db.query(
+    `SELECT id, recipient_address FROM batch_deliveries
+     WHERE driver_id = ? AND (lat = 0 OR lng = 0) AND status != 'delivered'
+     LIMIT 30`,
+    [driverId]
+  );
+
+  if (rows.length === 0) return 0;
+
+  let geocoded = 0;
+
+  // Process in batches of BATCH_SIZE to avoid rate-limiting
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      chunk.map(async (row) => {
+        const coords = await geocodeAddress(row.recipient_address);
+        if (coords) {
+          await db.query(
+            `UPDATE batch_deliveries SET lat = ?, lng = ? WHERE id = ?`,
+            [coords.lat, coords.lng, row.id]
+          );
+          geocoded++;
+        }
+      })
+    );
+  }
+
+  return geocoded;
+}
+
+/**
+ * Haversine: returns distance in km between two lat/lng points.
+ */
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Find the single nearest undelivered package to (lat, lng)
+ * for a specific driver. Only considers rows with valid coords.
+ */
+async function findNextNearest(db, driverId, lat, lng) {
+  const [rows] = await db.query(
+    `SELECT id, row_no, npp, batch_code, penerima, recipient_address,
+            lat, lng, kawasan, nama_pic_penerima, nomor_hp_pic, status,
+            ROUND(
+              6371 * ACOS(
+                COS(RADIANS(?)) * COS(RADIANS(lat))
+                * COS(RADIANS(lng) - RADIANS(?))
+                + SIN(RADIANS(?)) * SIN(RADIANS(lat))
+              ), 3
+            ) AS distance_km
+     FROM batch_deliveries
+     WHERE driver_id = ?
+       AND lat != 0 AND lng != 0
+       AND status IN ('assigned', 'in_progress')
+     ORDER BY distance_km ASC
+     LIMIT 1`,
+    [lat, lng, lat, driverId]
+  );
+  return rows[0] || null;
+}
 
 async function ensureBatchDeliveryPicColumns(db) {
   const [kabupatenColumn] = await db.query(
@@ -215,20 +336,39 @@ router.get('/:id', async (req, res) => {
 /**
  * PATCH /api/batch-delivery/:id/status
  * Driver updates delivery status.
- * Body: { status, driver_notes }
- * Valid status: in_progress, delivered, not_found, address_mismatch, refused
+ *
+ * Body:
+ *   status       - in_progress | delivered | not_found | address_mismatch | refused | returned
+ *   driver_notes - optional text notes
+ *   driver_lat   - current GPS latitude of driver (required when status = 'delivered')
+ *   driver_lng   - current GPS longitude of driver (required when status = 'delivered')
+ *
+ * When status = 'delivered':
+ *   1. Marks the package as delivered
+ *   2. Triggers background geocoding for all remaining ungeocoded packages on this driver
+ *   3. Returns the next nearest package (next_stop) in the response
  */
 router.patch('/:id/status', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
-    const { status, driver_notes } = req.body;
+    const { status, driver_notes, driver_lat, driver_lng } = req.body;
     const allowed = ['in_progress', 'delivered', 'not_found', 'address_mismatch', 'refused', 'returned'];
     if (!allowed.includes(status)) {
       return res.status(400).json({ success: false, message: `Invalid status. Allowed: ${allowed.join(', ')}` });
     }
 
+    // Fetch current package to get driver_id
+    const [[pkg]] = await db.query(
+      `SELECT id, driver_id, npp, penerima FROM batch_deliveries WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!pkg) {
+      return res.status(404).json({ success: false, message: 'Package not found' });
+    }
+
+    // Update status
     const deliveredAt = status === 'delivered' ? 'NOW()' : 'NULL';
     await db.query(
       `UPDATE batch_deliveries
@@ -237,8 +377,51 @@ router.patch('/:id/status', async (req, res) => {
       [status, driver_notes || null, req.params.id]
     );
 
+    // ── After delivery: geocode remaining + return next stop ──
+    const isTerminalStatus = ['delivered', 'not_found', 'address_mismatch', 'refused', 'returned'].includes(status);
+    const lat = parseFloat(driver_lat);
+    const lng = parseFloat(driver_lng);
+    const hasGps = !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+
+    if (isTerminalStatus && pkg.driver_id && hasGps) {
+      // Run geocoding in background — do not await so response is fast
+      geocodeDriverPackages(db, pkg.driver_id)
+        .then((count) => {
+          if (count > 0) {
+            console.log(`[batch-geocode] driver ${pkg.driver_id}: geocoded ${count} new addresses`);
+          }
+        })
+        .catch((err) => console.error('[batch-geocode] error:', err.message));
+
+      // Find next nearest package (uses coords already in DB, geocoded packages
+      // will appear in subsequent calls after background task completes)
+      const nextStop = await findNextNearest(db, pkg.driver_id, lat, lng);
+
+      // Count how many packages remain for this driver
+      const [[remaining]] = await db.query(
+        `SELECT COUNT(*) as total,
+                SUM(lat != 0 AND lng != 0) as with_coords,
+                SUM(lat = 0 OR lng = 0) as no_coords
+         FROM batch_deliveries
+         WHERE driver_id = ? AND status IN ('assigned', 'in_progress')`,
+        [pkg.driver_id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Status updated',
+        next_stop: nextStop,
+        remaining: {
+          total: Number(remaining.total),
+          with_coords: Number(remaining.with_coords),
+          geocoding_pending: Number(remaining.no_coords),
+        },
+      });
+    }
+
     res.json({ success: true, message: 'Status updated' });
   } catch (error) {
+    console.error('PATCH status error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -480,6 +663,76 @@ router.get('/:id/route', async (req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * GET /api/batch-delivery/next-stop
+ * Driver requests their next nearest package from current GPS position.
+ * Also triggers background geocoding for any packages without coords.
+ *
+ * Query params:
+ *   driver_id   - required
+ *   driver_lat  - required
+ *   driver_lng  - required
+ *   geocode     - '1' to trigger background geocoding of missing coords (default: '1')
+ */
+router.get('/next-stop', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { driver_id, driver_lat, driver_lng, geocode = '1' } = req.query;
+
+    if (!driver_id || !driver_lat || !driver_lng) {
+      return res.status(400).json({
+        success: false,
+        message: 'driver_id, driver_lat, dan driver_lng wajib diisi',
+      });
+    }
+
+    const lat = parseFloat(driver_lat);
+    const lng = parseFloat(driver_lng);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ success: false, message: 'Koordinat tidak valid' });
+    }
+
+    // Background geocoding (non-blocking)
+    if (geocode === '1') {
+      geocodeDriverPackages(db, parseInt(driver_id))
+        .then((count) => {
+          if (count > 0) {
+            console.log(`[next-stop geocode] driver ${driver_id}: geocoded ${count} addresses`);
+          }
+        })
+        .catch((err) => console.error('[next-stop geocode] error:', err.message));
+    }
+
+    // Find next nearest with current coords in DB
+    const nextStop = await findNextNearest(db, parseInt(driver_id), lat, lng);
+
+    // Summary of remaining packages
+    const [[remaining]] = await db.query(
+      `SELECT COUNT(*) as total,
+              SUM(lat != 0 AND lng != 0) as with_coords,
+              SUM(lat = 0 OR lng = 0) as no_coords
+       FROM batch_deliveries
+       WHERE driver_id = ? AND status IN ('assigned', 'in_progress')`,
+      [driver_id]
+    );
+
+    res.json({
+      success: true,
+      next_stop: nextStop,
+      remaining: {
+        total: Number(remaining.total),
+        with_coords: Number(remaining.with_coords),
+        geocoding_pending: Number(remaining.no_coords),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 /**
  * GET /api/batch-delivery/nearest
