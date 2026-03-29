@@ -8,6 +8,7 @@ let currentFranchiseId = null;
 let currentApplicantId = null;
 let jobsCache = [];
 let applicantsCache = [];
+let expeditionCache = [];
 let driverStatusChartInstance = null;
 let franchiseStatusChartInstance = null;
 
@@ -22,6 +23,7 @@ function bindEvents() {
   document.getElementById('moduleFranchiseBtn').addEventListener('click', () => switchView('franchise'));
   document.getElementById('menuJobsBtn').addEventListener('click', () => switchView('jobs'));
   document.getElementById('menuApplicantsBtn').addEventListener('click', () => switchView('applicants'));
+  document.getElementById('menuExpeditionBtn').addEventListener('click', () => switchView('expedition'));
 
   document.getElementById('statusFilter').addEventListener('change', loadList);
   document.getElementById('searchInput').addEventListener('input', debounce(loadList, 400));
@@ -40,6 +42,12 @@ function bindEvents() {
   document.getElementById('refreshApplicantsBtn').addEventListener('click', loadApplicants);
   document.getElementById('applicantJobFilter').addEventListener('change', loadApplicants);
   document.getElementById('applicantStatusFilter').addEventListener('change', loadApplicants);
+
+  document.getElementById('expGetQuoteBtn').addEventListener('click', handleExpeditionQuote);
+  document.getElementById('expeditionForm').addEventListener('submit', handleExpeditionCreate);
+  document.getElementById('expRefreshBtn').addEventListener('click', loadExpeditionShipments);
+  document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
+  document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
 }
 
 function switchView(view) {
@@ -65,6 +73,12 @@ function switchView(view) {
     return;
   }
 
+  if (view === 'expedition') {
+    document.getElementById('moduleTitle').textContent = 'Ekspedisi Pilot Tangerang';
+    loadExpeditionShipments();
+    return;
+  }
+
   switchMode(view);
 }
 
@@ -75,6 +89,7 @@ function setSidebarButtons(view) {
     franchise: document.getElementById('moduleFranchiseBtn'),
     jobs: document.getElementById('menuJobsBtn'),
     applicants: document.getElementById('menuApplicantsBtn'),
+    expedition: document.getElementById('menuExpeditionBtn'),
   };
 
   Object.values(buttonMap).forEach((btn) => btn && btn.classList.remove('active'));
@@ -88,9 +103,10 @@ function setViewVisibility(view) {
   const listContainer = document.getElementById('driversContainer');
   const jobsSection = document.getElementById('jobsSection');
   const applicantsSection = document.getElementById('applicantsSection');
+  const expeditionSection = document.getElementById('expeditionSection');
 
   // Hide all first
-  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection].forEach(
+  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection].forEach(
     (el) => el.classList.add('section-hidden')
   );
 
@@ -101,6 +117,8 @@ function setViewVisibility(view) {
     jobsSection.classList.remove('section-hidden');
   } else if (view === 'applicants') {
     applicantsSection.classList.remove('section-hidden');
+  } else if (view === 'expedition') {
+    expeditionSection.classList.remove('section-hidden');
   } else {
     stats.classList.remove('section-hidden');
     controls.classList.remove('section-hidden');
@@ -1216,4 +1234,176 @@ async function updateApplicantStatus(status) {
   } catch (error) {
     showError(error.message);
   }
+}
+
+async function handleExpeditionQuote() {
+  try {
+    const vehicleType = document.getElementById('expVehicleType').value;
+    const distanceKm = parseFloat(document.getElementById('expDistanceKm').value || '0');
+
+    if (!distanceKm || distanceKm <= 0) {
+      showError('Isi jarak (KM) terlebih dahulu');
+      return;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/quote?vehicle_type=${encodeURIComponent(vehicleType)}&distance_km=${distanceKm}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal hitung tarif');
+
+    const d = data.data;
+    document.getElementById('expQuoteResult').innerHTML =
+      `Harga: <strong>Rp${formatNumber(d.customer_price)}</strong> | Komisi: <strong>Rp${formatNumber(d.driver_commission)}</strong> | Margin: <strong>Rp${formatNumber(d.platform_margin)}</strong>`;
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function handleExpeditionCreate(e) {
+  e.preventDefault();
+
+  try {
+    const payload = {
+      service_type: document.getElementById('expServiceType').value,
+      vehicle_type: document.getElementById('expVehicleType').value,
+      distance_km: parseFloat(document.getElementById('expDistanceKm').value || '0'),
+      pickup_type: document.getElementById('expPickupType').value,
+
+      sender_name: document.getElementById('expSenderName').value.trim(),
+      sender_phone: document.getElementById('expSenderPhone').value.trim(),
+      sender_address: document.getElementById('expSenderAddress').value.trim(),
+      sender_kecamatan: document.getElementById('expSenderKecamatan').value.trim(),
+      sender_postal_code: document.getElementById('expSenderPostal').value.trim(),
+
+      recipient_name: document.getElementById('expRecipientName').value.trim(),
+      recipient_phone: document.getElementById('expRecipientPhone').value.trim(),
+      recipient_address: document.getElementById('expRecipientAddress').value.trim(),
+      recipient_kecamatan: document.getElementById('expRecipientKecamatan').value.trim(),
+      recipient_postal_code: document.getElementById('expRecipientPostal').value.trim(),
+
+      weight_kg: parseFloat(document.getElementById('expWeightKg').value || '0') || null,
+      length_cm: parseFloat(document.getElementById('expLengthCm').value || '0') || null,
+      width_cm: parseFloat(document.getElementById('expWidthCm').value || '0') || null,
+      height_cm: parseFloat(document.getElementById('expHeightCm').value || '0') || null,
+      insurance_enabled: document.getElementById('expInsurance').checked,
+      created_by: 'admin-web',
+    };
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/shipments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal membuat shipment');
+
+    showSuccess(`Shipment berhasil dibuat. Resi: ${data.data.tracking_number}`);
+    document.getElementById('expeditionForm').reset();
+    document.getElementById('expQuoteResult').textContent = 'Belum ada quote.';
+    await loadExpeditionShipments();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function loadExpeditionShipments() {
+  try {
+    const status = document.getElementById('expStatusFilter').value;
+    const search = document.getElementById('expSearchInput').value.trim();
+
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (search) params.set('search', search);
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/shipments?${params.toString()}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal load shipment');
+
+    expeditionCache = data.data || [];
+    renderExpeditionShipments(expeditionCache);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function renderExpeditionShipments(rows) {
+  const tbody = document.getElementById('expeditionTableBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3">Belum ada data shipment</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r) => {
+    const statusBadge = renderExpeditionStatusBadge(r.status);
+    const vehicleLabel = r.vehicle_type === 'motorcycle' ? 'Motor' : 'Sepeda';
+    return `
+      <tr>
+        <td>${r.id}</td>
+        <td><strong>${escapeHtml(r.tracking_number || '-')}</strong></td>
+        <td>${vehicleLabel}</td>
+        <td>${escapeHtml(r.sender_name || '-')}<br><small class="text-muted">${escapeHtml(r.sender_phone || '-')}</small></td>
+        <td>${escapeHtml(r.recipient_name || '-')}<br><small class="text-muted">${escapeHtml(r.recipient_phone || '-')}</small></td>
+        <td>${Number(r.distance_km || 0).toFixed(1)} KM</td>
+        <td>Rp${formatNumber(r.customer_price || 0)}</td>
+        <td>Rp${formatNumber(r.driver_commission || 0)}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <select class="form-select form-select-sm" onchange="updateExpeditionStatus(${r.id}, this.value)">
+            <option value="">Ubah status</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="picked_up">Picked Up</option>
+            <option value="in_transit">In Transit</option>
+            <option value="delivered">Delivered</option>
+            <option value="failed">Failed</option>
+            <option value="returned">Returned</option>
+          </select>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderExpeditionStatusBadge(status) {
+  const map = {
+    created: 'secondary',
+    scheduled: 'primary',
+    picked_up: 'info',
+    in_transit: 'warning',
+    delivered: 'success',
+    failed: 'danger',
+    returned: 'dark',
+  };
+  const cls = map[status] || 'secondary';
+  return `<span class="badge text-bg-${cls}">${escapeHtml((status || '-').toUpperCase())}</span>`;
+}
+
+async function updateExpeditionStatus(id, status) {
+  if (!status) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/expedition/shipments/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal update status');
+
+    showSuccess('Status shipment diperbarui');
+    await loadExpeditionShipments();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('id-ID');
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

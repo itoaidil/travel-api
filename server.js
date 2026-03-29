@@ -67,6 +67,7 @@ app.use('/api/promo', require('./routes/promoRoutes')); // GET /api/promo/active
 
 // Pricing endpoints (fare estimate with promo applied)
 app.use('/api/pricing', require('./routes/pricingRoutes')); // GET /api/pricing/calculate
+app.use('/api/expedition', require('./routes/expeditionRoutes')); // Expedition admin web + pricing pilot
 
 // Booking endpoints (for delivery and ride bookings)
 app.use('/api/bookings', require('./routes/bookingRoutes')); // Create delivery, get bookings
