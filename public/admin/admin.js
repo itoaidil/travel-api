@@ -1411,21 +1411,42 @@ function parseIndonesianAddress(text) {
 
 async function handleExpeditionQuote() {
   try {
+    const serviceType = document.getElementById('expServiceType').value;
     const vehicleType = document.getElementById('expVehicleType').value;
     const distanceKm = parseFloat(document.getElementById('expDistanceKm').value || '0');
+    const weightKg = parseFloat(document.getElementById('expWeightKg').value || '0');
+    const lengthCm = parseFloat(document.getElementById('expLengthCm').value || '0');
+    const widthCm = parseFloat(document.getElementById('expWidthCm').value || '0');
+    const heightCm = parseFloat(document.getElementById('expHeightCm').value || '0');
+    const insuranceEnabled = document.getElementById('expInsurance').checked;
 
     if (!distanceKm || distanceKm <= 0) {
       showError('Isi jarak (KM) terlebih dahulu');
       return;
     }
 
-    const res = await fetch(`${API_BASE_URL}/api/expedition/quote?vehicle_type=${encodeURIComponent(vehicleType)}&distance_km=${distanceKm}`);
+    if ((!weightKg || weightKg <= 0) && (!lengthCm || !widthCm || !heightCm)) {
+      showError('Isi berat aktual atau lengkapkan dimensi P/L/T agar tarif bisa dihitung');
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('service_type', serviceType);
+    params.set('vehicle_type', vehicleType);
+    params.set('distance_km', String(distanceKm));
+    if (weightKg > 0) params.set('weight_kg', String(weightKg));
+    if (lengthCm > 0) params.set('length_cm', String(lengthCm));
+    if (widthCm > 0) params.set('width_cm', String(widthCm));
+    if (heightCm > 0) params.set('height_cm', String(heightCm));
+    params.set('insurance_enabled', insuranceEnabled ? 'true' : 'false');
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/quote?${params.toString()}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal hitung tarif');
 
     const d = data.data;
     document.getElementById('expQuoteResult').innerHTML =
-      `Harga: <strong>Rp${formatNumber(d.customer_price)}</strong> | Komisi: <strong>Rp${formatNumber(d.driver_commission)}</strong> | Margin: <strong>Rp${formatNumber(d.platform_margin)}</strong>`;
+      `Harga: <strong>Rp${formatNumber(d.customer_price)}</strong> | Komisi: <strong>Rp${formatNumber(d.driver_commission)}</strong> | Margin: <strong>Rp${formatNumber(d.platform_margin)}</strong> | Berat Tagih: <strong>${d.chargeable_weight_kg} kg</strong>`;
   } catch (error) {
     showError(error.message);
   }

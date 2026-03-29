@@ -5,17 +5,86 @@ const axios = require('axios');
 const PILOT_CONFIG = {
   area: 'Kabupaten Tangerang',
   bicycle_max_distance_km: 5,
-  rates: {
-    bicycle: {
-      customer_price: 10000,
-      driver_commission: 4000,
-    },
-    motorcycle: {
-      customer_price: 20000,
-      driver_commission: 8000,
-    },
-  },
+  pricing_source: 'db_formula_v1',
 };
+
+const DEFAULT_SERVICE_PRICING = [
+  {
+    service_type: 'regular',
+    vehicle_type: 'bicycle',
+    transport_mode: 'land',
+    sla_min_hours: 24,
+    sla_max_hours: 48,
+    volumetric_divisor: 4000,
+    base_fee: 0,
+    rate_per_km: 800,
+    rate_per_kg: 2500,
+    insurance_fee_flat: 0,
+    insurance_fee_percent: 0,
+    fuel_surcharge_percent: 0,
+    handling_fee: 0,
+    driver_commission_type: 'fixed',
+    driver_commission_value: 4000,
+  },
+  {
+    service_type: 'regular',
+    vehicle_type: 'motorcycle',
+    transport_mode: 'land',
+    sla_min_hours: 12,
+    sla_max_hours: 24,
+    volumetric_divisor: 4000,
+    base_fee: 0,
+    rate_per_km: 1200,
+    rate_per_kg: 3000,
+    insurance_fee_flat: 0,
+    insurance_fee_percent: 0,
+    fuel_surcharge_percent: 0,
+    handling_fee: 0,
+    driver_commission_type: 'fixed',
+    driver_commission_value: 8000,
+  },
+  {
+    service_type: 'same_day',
+    vehicle_type: 'bicycle',
+    transport_mode: 'land',
+    sla_min_hours: 8,
+    sla_max_hours: 12,
+    volumetric_divisor: 4000,
+    base_fee: 2000,
+    rate_per_km: 1000,
+    rate_per_kg: 3000,
+    insurance_fee_flat: 0,
+    insurance_fee_percent: 0,
+    fuel_surcharge_percent: 0,
+    handling_fee: 0,
+    driver_commission_type: 'fixed',
+    driver_commission_value: 5000,
+  },
+  {
+    service_type: 'same_day',
+    vehicle_type: 'motorcycle',
+    transport_mode: 'land',
+    sla_min_hours: 4,
+    sla_max_hours: 8,
+    volumetric_divisor: 4000,
+    base_fee: 3000,
+    rate_per_km: 1500,
+    rate_per_kg: 4000,
+    insurance_fee_flat: 0,
+    insurance_fee_percent: 0,
+    fuel_surcharge_percent: 0,
+    handling_fee: 0,
+    driver_commission_type: 'fixed',
+    driver_commission_value: 9000,
+  },
+];
+
+const DEFAULT_MINIMUM_CHARGE = [
+  { service_type: 'regular', vehicle_type: 'bicycle', minimum_charge: 10000 },
+  { service_type: 'regular', vehicle_type: 'motorcycle', minimum_charge: 20000 },
+  { service_type: 'same_day', vehicle_type: 'bicycle', minimum_charge: 15000 },
+  { service_type: 'same_day', vehicle_type: 'motorcycle', minimum_charge: 25000 },
+];
 
 /**
  * Titik asal ekspedisi (kantor Hantar).
@@ -38,6 +107,20 @@ function normalizeVehicleType(vehicleType = '') {
   if (v === 'sepeda' || v === 'bicycle' || v === 'bike') return 'bicycle';
   if (v === 'motor' || v === 'motorcycle') return 'motorcycle';
   return null;
+}
+
+function normalizeServiceType(serviceType = '') {
+  const s = String(serviceType || '').trim().toLowerCase();
+  return s || 'regular';
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function roundToInt(value) {
+  return Math.max(0, Math.round(toNumber(value, 0)));
 }
 
 function buildTrackingNumber() {
@@ -80,6 +163,8 @@ async function ensureExpeditionTables(db) {
 
       distance_km DECIMAL(8,2) NOT NULL,
       weight_kg DECIMAL(8,2) NULL,
+      volumetric_weight_kg DECIMAL(10,2) NULL,
+      chargeable_weight_kg DECIMAL(10,2) NULL,
       length_cm DECIMAL(8,2) NULL,
       width_cm DECIMAL(8,2) NULL,
       height_cm DECIMAL(8,2) NULL,
@@ -90,6 +175,7 @@ async function ensureExpeditionTables(db) {
       customer_price INT NOT NULL,
       driver_commission INT NOT NULL,
       platform_margin INT NOT NULL,
+      pricing_breakdown_json JSON NULL,
 
       status ENUM('created','scheduled','picked_up','in_transit','delivered','failed','returned') NOT NULL DEFAULT 'created',
       notes TEXT NULL,
@@ -109,9 +195,112 @@ async function ensureExpeditionTables(db) {
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS sender_provinsi VARCHAR(120) NULL AFTER sender_kabupaten`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_kabupaten VARCHAR(120) NULL AFTER recipient_kecamatan`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_provinsi VARCHAR(120) NULL AFTER recipient_kabupaten`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS volumetric_weight_kg DECIMAL(10,2) NULL AFTER weight_kg`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS chargeable_weight_kg DECIMAL(10,2) NULL AFTER volumetric_weight_kg`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS pricing_breakdown_json JSON NULL AFTER platform_margin`,
   ];
   for (const sql of migrationCols) {
     await db.query(sql).catch(() => {});
+  }
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_service_pricing (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      service_type VARCHAR(40) NOT NULL,
+      vehicle_type ENUM('bicycle','motorcycle') NOT NULL,
+      transport_mode ENUM('land','sea') NOT NULL DEFAULT 'land',
+      sla_min_hours INT NULL,
+      sla_max_hours INT NULL,
+      volumetric_divisor INT NOT NULL DEFAULT 4000,
+      base_fee INT NOT NULL DEFAULT 0,
+      rate_per_km INT NOT NULL DEFAULT 0,
+      rate_per_kg INT NOT NULL DEFAULT 0,
+      insurance_fee_flat INT NOT NULL DEFAULT 0,
+      insurance_fee_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+      fuel_surcharge_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+      handling_fee INT NOT NULL DEFAULT 0,
+      driver_commission_type ENUM('fixed','percentage') NOT NULL DEFAULT 'fixed',
+      driver_commission_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      notes TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_service_vehicle (service_type, vehicle_type),
+      INDEX idx_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_minimum_charge_rules (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      service_type VARCHAR(40) NOT NULL,
+      vehicle_type ENUM('all','bicycle','motorcycle') NOT NULL DEFAULT 'all',
+      minimum_charge INT NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      notes TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_service_vehicle_min (service_type, vehicle_type),
+      INDEX idx_min_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  for (const row of DEFAULT_SERVICE_PRICING) {
+    await db.query(
+      `INSERT INTO expedition_service_pricing (
+        service_type, vehicle_type, transport_mode,
+        sla_min_hours, sla_max_hours,
+        volumetric_divisor, base_fee, rate_per_km, rate_per_kg,
+        insurance_fee_flat, insurance_fee_percent,
+        fuel_surcharge_percent, handling_fee,
+        driver_commission_type, driver_commission_value,
+        is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ON DUPLICATE KEY UPDATE
+        transport_mode = VALUES(transport_mode),
+        sla_min_hours = VALUES(sla_min_hours),
+        sla_max_hours = VALUES(sla_max_hours),
+        volumetric_divisor = VALUES(volumetric_divisor),
+        base_fee = VALUES(base_fee),
+        rate_per_km = VALUES(rate_per_km),
+        rate_per_kg = VALUES(rate_per_kg),
+        insurance_fee_flat = VALUES(insurance_fee_flat),
+        insurance_fee_percent = VALUES(insurance_fee_percent),
+        fuel_surcharge_percent = VALUES(fuel_surcharge_percent),
+        handling_fee = VALUES(handling_fee),
+        driver_commission_type = VALUES(driver_commission_type),
+        driver_commission_value = VALUES(driver_commission_value),
+        is_active = 1`,
+      [
+        row.service_type,
+        row.vehicle_type,
+        row.transport_mode,
+        row.sla_min_hours,
+        row.sla_max_hours,
+        row.volumetric_divisor,
+        row.base_fee,
+        row.rate_per_km,
+        row.rate_per_kg,
+        row.insurance_fee_flat,
+        row.insurance_fee_percent,
+        row.fuel_surcharge_percent,
+        row.handling_fee,
+        row.driver_commission_type,
+        row.driver_commission_value,
+      ]
+    );
+  }
+
+  for (const row of DEFAULT_MINIMUM_CHARGE) {
+    await db.query(
+      `INSERT INTO expedition_minimum_charge_rules (
+        service_type, vehicle_type, minimum_charge, is_active
+      ) VALUES (?, ?, ?, 1)
+      ON DUPLICATE KEY UPDATE
+        minimum_charge = VALUES(minimum_charge),
+        is_active = 1`,
+      [row.service_type, row.vehicle_type, row.minimum_charge]
+    );
   }
 
   await db.query(`
@@ -130,6 +319,296 @@ async function ensureExpeditionTables(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 }
+
+async function getServicePricing(db, serviceType, vehicleType) {
+  const normalizedService = normalizeServiceType(serviceType);
+
+  const [exactRows] = await db.query(
+    `SELECT *
+     FROM expedition_service_pricing
+     WHERE service_type = ? AND vehicle_type = ? AND is_active = 1
+     LIMIT 1`,
+    [normalizedService, vehicleType]
+  );
+  if (exactRows.length) return exactRows[0];
+
+  const [fallbackRows] = await db.query(
+    `SELECT *
+     FROM expedition_service_pricing
+     WHERE service_type = 'regular' AND vehicle_type = ? AND is_active = 1
+     LIMIT 1`,
+    [vehicleType]
+  );
+  if (fallbackRows.length) return fallbackRows[0];
+
+  throw new Error('Konfigurasi tarif layanan tidak ditemukan');
+}
+
+async function getMinimumCharge(db, serviceType, vehicleType) {
+  const normalizedService = normalizeServiceType(serviceType);
+
+  const [rows] = await db.query(
+    `SELECT minimum_charge
+     FROM expedition_minimum_charge_rules
+     WHERE is_active = 1
+       AND service_type IN (?, 'all')
+       AND vehicle_type IN (?, 'all')
+     ORDER BY
+       (service_type = ?) DESC,
+       (vehicle_type = ?) DESC
+     LIMIT 1`,
+    [normalizedService, vehicleType, normalizedService, vehicleType]
+  );
+
+  return rows.length ? toNumber(rows[0].minimum_charge, 0) : 0;
+}
+
+function calculatePriceByFormula({
+  distanceKm,
+  weightKg,
+  lengthCm,
+  widthCm,
+  heightCm,
+  insuranceEnabled,
+  serviceConfig,
+  minimumCharge,
+}) {
+  const volumetricDivisor = Math.max(1, toNumber(serviceConfig.volumetric_divisor, 4000));
+  const actualWeightKg = Math.max(0, toNumber(weightKg, 0));
+  const p = Math.max(0, toNumber(lengthCm, 0));
+  const l = Math.max(0, toNumber(widthCm, 0));
+  const t = Math.max(0, toNumber(heightCm, 0));
+  const volumetricWeightKg = p > 0 && l > 0 && t > 0 ? (p * l * t) / volumetricDivisor : 0;
+  const chargeableWeightKg = Math.max(actualWeightKg, volumetricWeightKg);
+
+  if (chargeableWeightKg <= 0) {
+    throw new Error('Berat aktual atau dimensi (P/L/T) harus diisi agar tarif bisa dihitung');
+  }
+
+  const baseFee = toNumber(serviceConfig.base_fee, 0);
+  const distanceCharge = Math.max(0, toNumber(distanceKm, 0)) * toNumber(serviceConfig.rate_per_km, 0);
+  const weightCharge = chargeableWeightKg * toNumber(serviceConfig.rate_per_kg, 0);
+  const handlingFee = toNumber(serviceConfig.handling_fee, 0);
+
+  const beforeInsurance = baseFee + distanceCharge + weightCharge + handlingFee;
+  const insuranceFlat = insuranceEnabled ? toNumber(serviceConfig.insurance_fee_flat, 0) : 0;
+  const insurancePercentAmount = insuranceEnabled
+    ? (beforeInsurance * toNumber(serviceConfig.insurance_fee_percent, 0)) / 100
+    : 0;
+  const insuranceAmount = insuranceFlat + insurancePercentAmount;
+
+  const subtotalBeforeFuel = beforeInsurance + insuranceAmount;
+  const fuelSurcharge = (subtotalBeforeFuel * toNumber(serviceConfig.fuel_surcharge_percent, 0)) / 100;
+  const subtotal = subtotalBeforeFuel + fuelSurcharge;
+
+  const minCharge = Math.max(0, toNumber(minimumCharge, 0));
+  const customerPrice = roundToInt(Math.max(subtotal, minCharge));
+
+  let driverCommission;
+  if (String(serviceConfig.driver_commission_type || 'fixed') === 'percentage') {
+    driverCommission = roundToInt((customerPrice * toNumber(serviceConfig.driver_commission_value, 0)) / 100);
+  } else {
+    driverCommission = roundToInt(serviceConfig.driver_commission_value);
+  }
+
+  if (driverCommission > customerPrice) {
+    driverCommission = customerPrice;
+  }
+
+  const platformMargin = roundToInt(customerPrice - driverCommission);
+
+  return {
+    customer_price: customerPrice,
+    driver_commission: driverCommission,
+    platform_margin: platformMargin,
+    actual_weight_kg: actualWeightKg,
+    volumetric_weight_kg: Number(volumetricWeightKg.toFixed(2)),
+    chargeable_weight_kg: Number(chargeableWeightKg.toFixed(2)),
+    volumetric_divisor: volumetricDivisor,
+    breakdown: {
+      base_fee: roundToInt(baseFee),
+      distance_charge: roundToInt(distanceCharge),
+      weight_charge: roundToInt(weightCharge),
+      handling_fee: roundToInt(handlingFee),
+      insurance_amount: roundToInt(insuranceAmount),
+      fuel_surcharge: roundToInt(fuelSurcharge),
+      subtotal_before_minimum: roundToInt(subtotal),
+      minimum_charge_applied: roundToInt(minCharge),
+    },
+  };
+}
+
+router.get('/pricing/services', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+    const [rows] = await db.query(
+      `SELECT *
+       FROM expedition_service_pricing
+       ORDER BY service_type ASC, vehicle_type ASC`
+    );
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load service pricing', error: error.message });
+  }
+});
+
+router.get('/pricing/minimum-charges', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+    const [rows] = await db.query(
+      `SELECT *
+       FROM expedition_minimum_charge_rules
+       ORDER BY service_type ASC, vehicle_type ASC`
+    );
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load minimum charges', error: error.message });
+  }
+});
+
+router.post('/pricing/services/upsert', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+
+    const {
+      service_type,
+      vehicle_type,
+      transport_mode = 'land',
+      sla_min_hours = null,
+      sla_max_hours = null,
+      volumetric_divisor = 4000,
+      base_fee = 0,
+      rate_per_km = 0,
+      rate_per_kg = 0,
+      insurance_fee_flat = 0,
+      insurance_fee_percent = 0,
+      fuel_surcharge_percent = 0,
+      handling_fee = 0,
+      driver_commission_type = 'fixed',
+      driver_commission_value = 0,
+      is_active = 1,
+      notes = null,
+    } = req.body || {};
+
+    const normalizedVehicle = normalizeVehicleType(vehicle_type);
+    const normalizedService = normalizeServiceType(service_type);
+    if (!normalizedService || !normalizedVehicle) {
+      return res.status(400).json({ success: false, message: 'service_type dan vehicle_type wajib valid' });
+    }
+
+    await db.query(
+      `INSERT INTO expedition_service_pricing (
+        service_type, vehicle_type, transport_mode,
+        sla_min_hours, sla_max_hours,
+        volumetric_divisor, base_fee, rate_per_km, rate_per_kg,
+        insurance_fee_flat, insurance_fee_percent,
+        fuel_surcharge_percent, handling_fee,
+        driver_commission_type, driver_commission_value,
+        is_active, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        transport_mode = VALUES(transport_mode),
+        sla_min_hours = VALUES(sla_min_hours),
+        sla_max_hours = VALUES(sla_max_hours),
+        volumetric_divisor = VALUES(volumetric_divisor),
+        base_fee = VALUES(base_fee),
+        rate_per_km = VALUES(rate_per_km),
+        rate_per_kg = VALUES(rate_per_kg),
+        insurance_fee_flat = VALUES(insurance_fee_flat),
+        insurance_fee_percent = VALUES(insurance_fee_percent),
+        fuel_surcharge_percent = VALUES(fuel_surcharge_percent),
+        handling_fee = VALUES(handling_fee),
+        driver_commission_type = VALUES(driver_commission_type),
+        driver_commission_value = VALUES(driver_commission_value),
+        is_active = VALUES(is_active),
+        notes = VALUES(notes)`,
+      [
+        normalizedService,
+        normalizedVehicle,
+        transport_mode === 'sea' ? 'sea' : 'land',
+        sla_min_hours,
+        sla_max_hours,
+        Math.max(1, roundToInt(volumetric_divisor)),
+        roundToInt(base_fee),
+        roundToInt(rate_per_km),
+        roundToInt(rate_per_kg),
+        roundToInt(insurance_fee_flat),
+        toNumber(insurance_fee_percent, 0),
+        toNumber(fuel_surcharge_percent, 0),
+        roundToInt(handling_fee),
+        String(driver_commission_type) === 'percentage' ? 'percentage' : 'fixed',
+        toNumber(driver_commission_value, 0),
+        is_active ? 1 : 0,
+        notes,
+      ]
+    );
+
+    return res.json({ success: true, message: 'Service pricing tersimpan' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to upsert service pricing', error: error.message });
+  }
+});
+
+router.post('/pricing/minimum-charges/upsert', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+
+    const {
+      service_type,
+      vehicle_type = 'all',
+      minimum_charge = 0,
+      is_active = 1,
+      notes = null,
+    } = req.body || {};
+
+    const normalizedService = normalizeServiceType(service_type || 'all');
+    const normalizedVehicle = vehicle_type === 'all' ? 'all' : normalizeVehicleType(vehicle_type);
+    if (!normalizedService || !normalizedVehicle) {
+      return res.status(400).json({ success: false, message: 'service_type/vehicle_type tidak valid' });
+    }
+
+    await db.query(
+      `INSERT INTO expedition_minimum_charge_rules (
+        service_type, vehicle_type, minimum_charge, is_active, notes
+      ) VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        minimum_charge = VALUES(minimum_charge),
+        is_active = VALUES(is_active),
+        notes = VALUES(notes)`,
+      [
+        normalizedService,
+        normalizedVehicle,
+        roundToInt(minimum_charge),
+        is_active ? 1 : 0,
+        notes,
+      ]
+    );
+
+    return res.json({ success: true, message: 'Minimum charge tersimpan' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to upsert minimum charge', error: error.message });
+  }
+});
 
 /**
  * GET /api/expedition/office
@@ -209,8 +688,26 @@ router.get('/config', (req, res) => {
  */
 router.get('/quote', async (req, res) => {
   try {
-    const { vehicle_type, distance_km } = req.query;
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+
+    const {
+      vehicle_type,
+      service_type = 'regular',
+      distance_km,
+      weight_kg,
+      length_cm,
+      width_cm,
+      height_cm,
+      insurance_enabled = 'false',
+    } = req.query;
+
     const normalized = normalizeVehicleType(vehicle_type);
+    const normalizedService = normalizeServiceType(service_type);
     const distanceKm = parseFloat(distance_km || '0');
 
     if (!normalized) {
@@ -228,18 +725,35 @@ router.get('/quote', async (req, res) => {
       });
     }
 
-    const rate = PILOT_CONFIG.rates[normalized];
-    const platformMargin = rate.customer_price - rate.driver_commission;
+    const serviceConfig = await getServicePricing(db, normalizedService, normalized);
+    const minimumCharge = await getMinimumCharge(db, normalizedService, normalized);
+    const pricing = calculatePriceByFormula({
+      distanceKm,
+      weightKg: weight_kg,
+      lengthCm: length_cm,
+      widthCm: width_cm,
+      heightCm: height_cm,
+      insuranceEnabled: String(insurance_enabled).toLowerCase() === 'true',
+      serviceConfig,
+      minimumCharge,
+    });
 
     return res.json({
       success: true,
       data: {
         area: PILOT_CONFIG.area,
+        service_type: normalizedService,
         vehicle_type: normalized,
         distance_km: distanceKm,
-        customer_price: rate.customer_price,
-        driver_commission: rate.driver_commission,
-        platform_margin: platformMargin,
+        customer_price: pricing.customer_price,
+        driver_commission: pricing.driver_commission,
+        platform_margin: pricing.platform_margin,
+        actual_weight_kg: pricing.actual_weight_kg,
+        volumetric_weight_kg: pricing.volumetric_weight_kg,
+        chargeable_weight_kg: pricing.chargeable_weight_kg,
+        volumetric_divisor: pricing.volumetric_divisor,
+        minimum_charge: minimumCharge,
+        breakdown: pricing.breakdown,
       },
     });
   } catch (error) {
@@ -344,6 +858,7 @@ router.post('/shipments', async (req, res) => {
     } = req.body;
 
     const normalizedVehicle = normalizeVehicleType(vehicle_type);
+    const normalizedService = normalizeServiceType(service_type);
     const distanceKm = parseFloat(distance_km || '0');
 
     if (!normalizedVehicle) {
@@ -368,10 +883,22 @@ router.post('/shipments', async (req, res) => {
       });
     }
 
-    const rate = PILOT_CONFIG.rates[normalizedVehicle];
-    const customerPrice = rate.customer_price;
-    const driverCommission = rate.driver_commission;
-    const platformMargin = customerPrice - driverCommission;
+    const serviceConfig = await getServicePricing(db, normalizedService, normalizedVehicle);
+    const minimumCharge = await getMinimumCharge(db, normalizedService, normalizedVehicle);
+    const pricing = calculatePriceByFormula({
+      distanceKm,
+      weightKg: weight_kg,
+      lengthCm: length_cm,
+      widthCm: width_cm,
+      heightCm: height_cm,
+      insuranceEnabled: Boolean(insurance_enabled),
+      serviceConfig,
+      minimumCharge,
+    });
+
+    const customerPrice = pricing.customer_price;
+    const driverCommission = pricing.driver_commission;
+    const platformMargin = pricing.platform_margin;
     const trackingNumber = buildTrackingNumber();
 
     const [result] = await db.query(
@@ -379,14 +906,14 @@ router.post('/shipments', async (req, res) => {
         tracking_number, area, service_type, vehicle_type,
         sender_name, sender_phone, sender_address, sender_kecamatan, sender_kelurahan, sender_kabupaten, sender_provinsi, sender_postal_code,
         recipient_name, recipient_phone, recipient_address, recipient_kecamatan, recipient_kelurahan, recipient_kabupaten, recipient_provinsi, recipient_postal_code,
-        distance_km, weight_kg, length_cm, width_cm, height_cm,
+        distance_km, weight_kg, volumetric_weight_kg, chargeable_weight_kg, length_cm, width_cm, height_cm,
         insurance_enabled, pickup_type, customer_price, driver_commission, platform_margin,
-        status, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?)` ,
+        pricing_breakdown_json, status, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         trackingNumber,
         PILOT_CONFIG.area,
-        String(service_type || 'regular').toLowerCase(),
+        normalizedService,
         normalizedVehicle,
         sender_name,
         sender_phone,
@@ -406,6 +933,8 @@ router.post('/shipments', async (req, res) => {
         recipient_postal_code || null,
         distanceKm,
         weight_kg || null,
+        pricing.volumetric_weight_kg || null,
+        pricing.chargeable_weight_kg || null,
         length_cm || null,
         width_cm || null,
         height_cm || null,
@@ -414,6 +943,8 @@ router.post('/shipments', async (req, res) => {
         customerPrice,
         driverCommission,
         platformMargin,
+        JSON.stringify(pricing.breakdown),
+        'created',
         notes || null,
         created_by || 'admin-web',
       ]
@@ -435,7 +966,13 @@ router.post('/shipments', async (req, res) => {
         driver_commission: driverCommission,
         platform_margin: platformMargin,
         distance_km: distanceKm,
+        service_type: normalizedService,
         vehicle_type: normalizedVehicle,
+        actual_weight_kg: pricing.actual_weight_kg,
+        volumetric_weight_kg: pricing.volumetric_weight_kg,
+        chargeable_weight_kg: pricing.chargeable_weight_kg,
+        minimum_charge: minimumCharge,
+        breakdown: pricing.breakdown,
       },
     });
   } catch (error) {
