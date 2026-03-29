@@ -54,6 +54,8 @@ function bindEvents() {
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
   document.getElementById('expReloadPricingBtn').addEventListener('click', loadExpeditionPricingSetup);
+  document.getElementById('expAdminLoginBtn').addEventListener('click', expeditionAdminLogin);
+  document.getElementById('expAdminLogoutBtn').addEventListener('click', expeditionAdminLogout);
   document.getElementById('expCheckWilayahSeedBtn').addEventListener('click', loadExpeditionWilayahSeedStatus);
   document.getElementById('expTriggerWilayahSeedBtn').addEventListener('click', triggerExpeditionWilayahSeed);
   document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
@@ -1561,40 +1563,102 @@ async function loadExpeditionPricingSetup() {
 
     renderExpeditionPricingServices(expeditionPricingServices);
     renderExpeditionMinCharges(expeditionMinCharges);
-    await loadExpeditionWilayahSeedStatus();
+    updateExpeditionAdminAuthUi();
+    if (getExpeditionAdminToken()) {
+      await loadExpeditionWilayahSeedStatus(false);
+    }
   } catch (error) {
     showError(error.message);
   }
 }
 
-function getExpeditionSeedToken() {
-  const saved = localStorage.getItem('exp_seed_token') || '';
-  const token = window.prompt('Masukkan X-Admin-Seed-Token untuk master wilayah:', saved || '');
-  if (!token) return null;
-  const normalized = String(token).trim();
-  if (!normalized) return null;
-  localStorage.setItem('exp_seed_token', normalized);
-  return normalized;
+function getExpeditionAdminToken() {
+  return String(localStorage.getItem('exp_admin_token') || '').trim();
 }
 
-async function loadExpeditionWilayahSeedStatus() {
+function updateExpeditionAdminAuthUi() {
+  const hasToken = !!getExpeditionAdminToken();
+  const hintEl = document.getElementById('expWilayahSeedHint');
+  const loginBtn = document.getElementById('expAdminLoginBtn');
+  const logoutBtn = document.getElementById('expAdminLogoutBtn');
+
+  if (loginBtn) loginBtn.classList.toggle('btn-success', !hasToken);
+  if (loginBtn) loginBtn.classList.toggle('btn-outline-dark', hasToken);
+  if (logoutBtn) logoutBtn.disabled = !hasToken;
+
+  if (hintEl && !hasToken) {
+    hintEl.textContent = 'Silakan Login Admin dulu untuk cek/sinkron master wilayah.';
+  }
+}
+
+async function expeditionAdminLogin() {
+  const username = window.prompt('Username Admin Ekspedisi:');
+  if (!username) return false;
+  const password = window.prompt('Password Admin Ekspedisi:');
+  if (!password) return false;
+
+  const res = await fetch(`${API_BASE_URL}/api/expedition/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: String(username).trim(), password: String(password).trim() }),
+  });
+  const data = await res.json();
+  if (!data.success || !data.data?.token) {
+    throw new Error(data.message || 'Login admin gagal');
+  }
+
+  localStorage.setItem('exp_admin_token', data.data.token);
+  updateExpeditionAdminAuthUi();
+  showSuccess('Login admin berhasil');
+  return true;
+}
+
+function expeditionAdminLogout() {
+  localStorage.removeItem('exp_admin_token');
+  updateExpeditionAdminAuthUi();
+  const countsEl = document.getElementById('expWilayahSeedCounts');
+  if (countsEl) countsEl.textContent = 'belum dicek';
+  showSuccess('Logout admin berhasil');
+}
+
+async function ensureExpeditionAdminLogin() {
+  if (getExpeditionAdminToken()) return true;
+  try {
+    return await expeditionAdminLogin();
+  } catch (error) {
+    showError(error.message);
+    return false;
+  }
+}
+
+async function loadExpeditionWilayahSeedStatus(requireLogin = true) {
   const countsEl = document.getElementById('expWilayahSeedCounts');
   const hintEl = document.getElementById('expWilayahSeedHint');
   if (!countsEl || !hintEl) return;
 
   try {
-    const token = getExpeditionSeedToken();
+    if (requireLogin) {
+      const ok = await ensureExpeditionAdminLogin();
+      if (!ok) return;
+    }
+
+    const token = getExpeditionAdminToken();
     if (!token) {
-      countsEl.textContent = 'token belum diisi';
-      hintEl.textContent = 'Isi token untuk melihat status master wilayah.';
+      countsEl.textContent = 'butuh login';
+      hintEl.textContent = 'Klik Login Admin untuk melihat status master wilayah.';
       return;
     }
 
     countsEl.textContent = 'memuat...';
     const res = await fetch(`${API_BASE_URL}/api/expedition/admin/seed-wilayah/status`, {
-      headers: { 'x-admin-seed-token': token },
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
+    if (res.status === 401) {
+      localStorage.removeItem('exp_admin_token');
+      updateExpeditionAdminAuthUi();
+      throw new Error('Sesi login admin sudah habis, silakan login ulang');
+    }
     if (!data.success) throw new Error(data.message || 'Gagal cek status wilayah');
 
     const d = data.data || {};
@@ -1607,7 +1671,9 @@ async function loadExpeditionWilayahSeedStatus() {
 }
 
 async function triggerExpeditionWilayahSeed() {
-  const token = getExpeditionSeedToken();
+  const ok = await ensureExpeditionAdminLogin();
+  if (!ok) return;
+  const token = getExpeditionAdminToken();
   if (!token) return;
 
   const btn = document.getElementById('expTriggerWilayahSeedBtn');
@@ -1624,11 +1690,16 @@ async function triggerExpeditionWilayahSeed() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-admin-seed-token': token,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({}),
     });
     const data = await res.json();
+    if (res.status === 401) {
+      localStorage.removeItem('exp_admin_token');
+      updateExpeditionAdminAuthUi();
+      throw new Error('Sesi login admin sudah habis, silakan login ulang');
+    }
     if (!data.success) throw new Error(data.message || 'Gagal trigger sinkron wilayah');
 
     showSuccess(data.message || 'Sinkronisasi master wilayah dimulai');

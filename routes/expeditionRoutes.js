@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
 
 const PILOT_CONFIG = {
   area: 'Kabupaten Tangerang',
@@ -1449,6 +1450,31 @@ const SEED_TOKEN = String(
   process.env.Admin_SEED_TOKEN ||
   'hantar-seed-wilayah-2026'
 ).trim();
+const EXP_ADMIN_USERNAME = String(process.env.EXPEDITION_ADMIN_USERNAME || process.env.ADMIN_WEB_USERNAME || 'admin').trim();
+const EXP_ADMIN_PASSWORD = String(process.env.EXPEDITION_ADMIN_PASSWORD || process.env.ADMIN_WEB_PASSWORD || 'hantar123').trim();
+const EXP_ADMIN_JWT_SECRET = process.env.JWT_SECRET || 'hantar-travel-secret-key-2025';
+
+function parseBearerToken(authHeader) {
+  const value = String(authHeader || '');
+  const parts = value.split(' ');
+  if (parts.length === 2 && /^Bearer$/i.test(parts[0])) return parts[1].trim();
+  return '';
+}
+
+function isExpeditionAdminAuthorized(req) {
+  const bearer = parseBearerToken(req.headers.authorization || '');
+  if (bearer) {
+    try {
+      const decoded = jwt.verify(bearer, EXP_ADMIN_JWT_SECRET);
+      if (decoded && decoded.role === 'expedition_admin') return true;
+    } catch (_) {
+      // fallback to legacy token below
+    }
+  }
+
+  const legacyToken = String(req.headers['x-admin-seed-token'] || '').trim();
+  return !!legacyToken && legacyToken === SEED_TOKEN;
+}
 
 async function fetchJson(url) {
   const res = await axios.get(url, { timeout: 30000 });
@@ -1523,12 +1549,41 @@ async function seedWilayahFromApi(db) {
 }
 
 /**
+ * POST /api/expedition/admin/login
+ * Body: { username, password }
+ */
+router.post('/admin/login', async (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '').trim();
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: 'Username dan password wajib diisi' });
+  }
+
+  if (username !== EXP_ADMIN_USERNAME || password !== EXP_ADMIN_PASSWORD) {
+    return res.status(401).json({ success: false, message: 'Username/password tidak valid' });
+  }
+
+  const token = jwt.sign(
+    { role: 'expedition_admin', username },
+    EXP_ADMIN_JWT_SECRET,
+    { expiresIn: '12h' }
+  );
+
+  return res.json({
+    success: true,
+    message: 'Login admin berhasil',
+    data: { token, token_type: 'Bearer', expires_in: 43200 },
+  });
+});
+
+/**
  * POST /api/expedition/admin/seed-wilayah
- * Header: X-Admin-Seed-Token: <ADMIN_SEED_TOKEN>
+ * Header: Authorization: Bearer <token> (preferred)
+ * Legacy: X-Admin-Seed-Token: <ADMIN_SEED_TOKEN>
  */
 router.post('/admin/seed-wilayah', async (req, res) => {
-  const token = String(req.headers['x-admin-seed-token'] || '').trim();
-  if (!token || token !== SEED_TOKEN) {
+  if (!isExpeditionAdminAuthorized(req)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
@@ -1554,8 +1609,7 @@ router.post('/admin/seed-wilayah', async (req, res) => {
  * Cek jumlah baris di tabel master wilayah.
  */
 router.get('/admin/seed-wilayah/status', async (req, res) => {
-  const token = String(req.headers['x-admin-seed-token'] || '').trim();
-  if (!token || token !== SEED_TOKEN) {
+  if (!isExpeditionAdminAuthorized(req)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
 
