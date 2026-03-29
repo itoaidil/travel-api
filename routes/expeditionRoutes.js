@@ -150,8 +150,9 @@ router.get('/geocode', async (req, res) => {
     const addr = place.address || {};
 
     // Map Nominatim address fields to Indonesian postal hierarchy
-    const kabupaten = addr.county || addr.city || addr.municipality || addr.regency || '';
-    const kecamatan = addr.city_district || addr.suburb || addr.town || addr.village || addr.hamlet || '';
+    // In Indonesia: county = Kabupaten, city = Kota, municipality = Kecamatan
+    const kabupaten = addr.county || addr.city || '';
+    const kecamatan = addr.municipality || addr.city_district || addr.suburb || addr.town || addr.village || addr.hamlet || '';
     const provinsi = addr.state || '';
     const kodePos = addr.postcode || '';
 
