@@ -9,6 +9,8 @@ let currentApplicantId = null;
 let jobsCache = [];
 let applicantsCache = [];
 let expeditionCache = [];
+let expeditionPricingServices = [];
+let expeditionMinCharges = [];
 let senderCoords = null;
 let recipientCoords = null;
 let driverStatusChartInstance = null;
@@ -50,6 +52,9 @@ function bindEvents() {
   document.getElementById('expRefreshBtn').addEventListener('click', loadExpeditionShipments);
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
+  document.getElementById('expReloadPricingBtn').addEventListener('click', loadExpeditionPricingSetup);
+  document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
+  document.getElementById('expMinChargeForm').addEventListener('submit', saveExpeditionMinimumCharge);
 
   // Semua field penerima diisi manual oleh admin
 }
@@ -81,6 +86,7 @@ function switchView(view) {
     document.getElementById('moduleTitle').textContent = 'Ekspedisi Pilot Tangerang';
     loadExpeditionOffice();
     loadExpeditionShipments();
+    loadExpeditionPricingSetup();
     return;
   }
 
@@ -1520,6 +1526,133 @@ async function loadExpeditionShipments() {
 
     expeditionCache = data.data || [];
     renderExpeditionShipments(expeditionCache);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function loadExpeditionPricingSetup() {
+  try {
+    const [serviceRes, minRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/expedition/pricing/services`),
+      fetch(`${API_BASE_URL}/api/expedition/pricing/minimum-charges`),
+    ]);
+
+    const serviceData = await serviceRes.json();
+    const minData = await minRes.json();
+
+    if (!serviceData.success) throw new Error(serviceData.message || 'Gagal load service pricing');
+    if (!minData.success) throw new Error(minData.message || 'Gagal load minimum charge');
+
+    expeditionPricingServices = serviceData.data || [];
+    expeditionMinCharges = minData.data || [];
+
+    renderExpeditionPricingServices(expeditionPricingServices);
+    renderExpeditionMinCharges(expeditionMinCharges);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function renderExpeditionPricingServices(rows) {
+  const tbody = document.getElementById('expPricingServiceBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-2">Belum ada setup tarif layanan</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r) => {
+    const sla = `${r.sla_min_hours || 0}-${r.sla_max_hours || 0} jam`;
+    const commission = String(r.driver_commission_type) === 'percentage'
+      ? `${r.driver_commission_value}%`
+      : `Rp${formatNumber(r.driver_commission_value)}`;
+    return `
+      <tr>
+        <td>${escapeHtml(r.service_type)}</td>
+        <td>${escapeHtml(r.vehicle_type)}</td>
+        <td>${escapeHtml(sla)}</td>
+        <td>${escapeHtml(String(r.volumetric_divisor || '-'))}</td>
+        <td>Rp${formatNumber(r.rate_per_km || 0)}</td>
+        <td>Rp${formatNumber(r.rate_per_kg || 0)}</td>
+        <td>Rp${formatNumber(r.base_fee || 0)}</td>
+        <td>${escapeHtml(commission)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderExpeditionMinCharges(rows) {
+  const tbody = document.getElementById('expMinChargeBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Belum ada minimum charge</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.service_type)}</td>
+      <td>${escapeHtml(r.vehicle_type)}</td>
+      <td>Rp${formatNumber(r.minimum_charge || 0)}</td>
+    </tr>
+  `).join('');
+}
+
+async function saveExpeditionServicePricing(e) {
+  e.preventDefault();
+  try {
+    const payload = {
+      service_type: document.getElementById('spServiceType').value,
+      vehicle_type: document.getElementById('spVehicleType').value,
+      sla_min_hours: parseInt(document.getElementById('spSlaMin').value || '0', 10) || 0,
+      sla_max_hours: parseInt(document.getElementById('spSlaMax').value || '0', 10) || 0,
+      volumetric_divisor: parseInt(document.getElementById('spDivisor').value || '4000', 10) || 4000,
+      base_fee: parseInt(document.getElementById('spBaseFee').value || '0', 10) || 0,
+      rate_per_km: parseInt(document.getElementById('spRateKm').value || '0', 10) || 0,
+      rate_per_kg: parseInt(document.getElementById('spRateKg').value || '0', 10) || 0,
+      handling_fee: parseInt(document.getElementById('spHandling').value || '0', 10) || 0,
+      fuel_surcharge_percent: parseFloat(document.getElementById('spFuelPct').value || '0') || 0,
+      insurance_fee_flat: parseInt(document.getElementById('spInsuranceFlat').value || '0', 10) || 0,
+      insurance_fee_percent: parseFloat(document.getElementById('spInsurancePct').value || '0') || 0,
+      driver_commission_type: document.getElementById('spCommissionType').value,
+      driver_commission_value: parseFloat(document.getElementById('spCommissionValue').value || '0') || 0,
+      is_active: 1,
+    };
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/pricing/services/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal simpan service pricing');
+
+    showSuccess('Setup tarif layanan berhasil disimpan');
+    await loadExpeditionPricingSetup();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function saveExpeditionMinimumCharge(e) {
+  e.preventDefault();
+  try {
+    const payload = {
+      service_type: document.getElementById('mcServiceType').value,
+      vehicle_type: document.getElementById('mcVehicleType').value,
+      minimum_charge: parseInt(document.getElementById('mcAmount').value || '0', 10) || 0,
+      is_active: 1,
+    };
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/pricing/minimum-charges/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal simpan minimum charge');
+
+    showSuccess('Minimum charge berhasil disimpan');
+    await loadExpeditionPricingSetup();
   } catch (error) {
     showError(error.message);
   }
