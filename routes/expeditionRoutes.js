@@ -1575,6 +1575,9 @@ router.get('/admin/seed-wilayah/status', async (req, res) => {
     const db = req.db;
     if (!db) return res.status(503).json({ success: false, message: 'Database unavailable' });
 
+    await ensureExpeditionTables(db);
+    await addLatLonIfMissing(db);
+
     const [[{ provinces }]] = await db.query('SELECT COUNT(*) AS provinces FROM expedition_master_provinces');
     const [[{ regencies }]] = await db.query('SELECT COUNT(*) AS regencies FROM expedition_master_regencies');
     const [[{ districts }]] = await db.query('SELECT COUNT(*) AS districts FROM expedition_master_districts');
