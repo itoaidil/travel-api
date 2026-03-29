@@ -51,7 +51,7 @@ function bindEvents() {
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
 
-  document.getElementById('expRecipientAddress').addEventListener('input', debounce(() => geocodeAddressForExpedition('recipient'), 900));
+  // Semua field penerima diisi manual oleh admin
 }
 
 function switchView(view) {
@@ -1309,40 +1309,104 @@ async function geocodeAddressForExpedition(type) {
 
   if (!address || address.length < 10) return;
 
-  statusEl.textContent = '⏳ Mencari koordinat alamat...';
+  // ── Step 1: parse address locally (instant, no API) ──────────────────────
+  const parsed = parseIndonesianAddress(address);
+  if (isRecipient) {
+    if (parsed.kecamatan) document.getElementById('expRecipientKecamatan').value = parsed.kecamatan;
+    if (parsed.kabupaten) document.getElementById('expRecipientKabupaten').value = parsed.kabupaten;
+    if (parsed.provinsi)  document.getElementById('expRecipientProvinsi').value  = parsed.provinsi;
+    if (parsed.kodePos)   document.getElementById('expRecipientPostal').value    = parsed.kodePos;
+  }
+
+  // ── Step 2: geocode for coordinates (use simplified query for better hit) ─
+  statusEl.textContent = '⏳ Mencari koordinat...';
   statusEl.style.color = '#6c757d';
 
+  // Build a simplified query: prefer extracted kecamatan+kabupaten over raw address
+  const geoQuery = parsed.kecamatan && parsed.kabupaten
+    ? `${parsed.kecamatan}, ${parsed.kabupaten}, ${parsed.provinsi || 'Indonesia'}`
+    : address;
+
   try {
-    const res = await fetch(`${API_BASE_URL}/api/expedition/geocode?address=${encodeURIComponent(address)}`);
+    const res = await fetch(`${API_BASE_URL}/api/expedition/geocode?address=${encodeURIComponent(geoQuery)}`);
     const data = await res.json();
 
     if (!data.success) {
-      statusEl.textContent = `⚠ ${data.message}`;
-      statusEl.style.color = '#dc3545';
+      // Coordinates not found — distance won't auto-calc, but address fields may still be filled
+      const filledPartially = parsed.kecamatan || parsed.kabupaten;
+      statusEl.textContent = filledPartially
+        ? '⚠ Koordinat tidak ditemukan — isi kode pos manual, jarak perlu diisi manual jika belum muncul'
+        : '⚠ Alamat tidak ditemukan di peta, coba tambahkan nama kecamatan/kabupaten';
+      statusEl.style.color = '#e65c00';
       return;
     }
 
     const d = data.data;
-    statusEl.textContent = `✓ Ditemukan: ${d.display_name.slice(0, 80)}...`;
+    statusEl.textContent = `✓ Koordinat ditemukan (${d.display_name.slice(0, 70)}...)`;
     statusEl.style.color = '#198754';
 
     if (isRecipient) {
       recipientCoords = { lat: d.lat, lon: d.lon };
-      if (d.kecamatan) document.getElementById('expRecipientKecamatan').value = d.kecamatan;
-      if (d.kabupaten) document.getElementById('expRecipientKabupaten').value = d.kabupaten;
-      if (d.provinsi) document.getElementById('expRecipientProvinsi').value = d.provinsi;
+      // Only overwrite if local parse didn't already fill them
+      if (!parsed.kecamatan && d.kecamatan) document.getElementById('expRecipientKecamatan').value = d.kecamatan;
+      if (!parsed.kabupaten && d.kabupaten) document.getElementById('expRecipientKabupaten').value = d.kabupaten;
+      if (!parsed.provinsi  && d.provinsi)  document.getElementById('expRecipientProvinsi').value  = d.provinsi;
     } else {
       senderCoords = { lat: d.lat, lon: d.lon };
-      if (d.kecamatan) document.getElementById('expSenderKecamatan').value = d.kecamatan;
-      if (d.kabupaten) document.getElementById('expSenderKabupaten').value = d.kabupaten;
-      if (d.provinsi) document.getElementById('expSenderProvinsi').value = d.provinsi;
+      if (!parsed.kecamatan && d.kecamatan) document.getElementById('expSenderKecamatan').value = d.kecamatan;
+      if (!parsed.kabupaten && d.kabupaten) document.getElementById('expSenderKabupaten').value = d.kabupaten;
+      if (!parsed.provinsi  && d.provinsi)  document.getElementById('expSenderProvinsi').value  = d.provinsi;
     }
 
     updateAutoDistanceVehicle();
   } catch (err) {
-    statusEl.textContent = '⚠ Geocoding gagal, isi manual';
+    statusEl.textContent = '⚠ Koneksi ke peta gagal, isi manual';
     statusEl.style.color = '#dc3545';
   }
+}
+
+/**
+ * Parse Indonesian address text to extract kecamatan, kabupaten, provinsi, kodePos.
+ * Handles common patterns: "Kec. X", "Kecamatan X", "Kabupaten/Kota X", "Provinsi X",
+ * and trailing 5-digit postal codes.
+ */
+function parseIndonesianAddress(text) {
+  const result = { kecamatan: '', kabupaten: '', provinsi: '', kodePos: '' };
+  if (!text) return result;
+
+  // Postal code: 5-digit number at end (or anywhere)
+  const kodeMatch = text.match(/\b(\d{5})\b/);
+  if (kodeMatch) result.kodePos = kodeMatch[1];
+
+  // Kecamatan: "Kec. X" / "Kecamatan X"
+  const kecMatch = text.match(/\bkec(?:amatan)?[.\s]+([A-Za-z\s]+?)(?=[,\n]|Kab|Kota|Kabupaten|Provinsi|Banten|Jawa|Sumatera|Sulawesi|$)/i);
+  if (kecMatch) result.kecamatan = kecMatch[1].trim().replace(/\s+/g, ' ');
+
+  // Kabupaten / Kota: "Kabupaten X" / "Kab. X" / "Kota X"
+  const kabMatch = text.match(/\b(Kab(?:upaten)?\.?\s+|Kota\s+)([A-Za-z\s]+?)(?=[,\n]|Provinsi|Banten|Jawa|Sumatera|Sulawesi|\d|$)/i);
+  if (kabMatch) {
+    const prefix = kabMatch[1].trim();
+    const name   = kabMatch[2].trim().replace(/\s+/g, ' ');
+    result.kabupaten = prefix.toLowerCase().startsWith('kota') ? `Kota ${name}` : `Kabupaten ${name}`;
+  }
+
+  // Provinsi: known province names embedded in address
+  const provinces = [
+    'Banten','DKI Jakarta','Jawa Barat','Jawa Tengah','Jawa Timur','DI Yogyakarta',
+    'Bali','Sumatera Utara','Sumatera Barat','Sumatera Selatan','Riau','Kepulauan Riau',
+    'Lampung','Bengkulu','Jambi','Aceh','Bangka Belitung','Sulawesi Selatan',
+    'Sulawesi Utara','Sulawesi Tengah','Sulawesi Tenggara','Gorontalo','Kalimantan Barat',
+    'Kalimantan Timur','Kalimantan Selatan','Kalimantan Tengah','Kalimantan Utara',
+    'Nusa Tenggara Barat','Nusa Tenggara Timur','Maluku','Maluku Utara','Papua','Papua Barat',
+  ];
+  for (const prov of provinces) {
+    if (text.toLowerCase().includes(prov.toLowerCase())) {
+      result.provinsi = prov;
+      break;
+    }
+  }
+
+  return result;
 }
 
 async function handleExpeditionQuote() {
@@ -1351,7 +1415,7 @@ async function handleExpeditionQuote() {
     const distanceKm = parseFloat(document.getElementById('expDistanceKm').value || '0');
 
     if (!distanceKm || distanceKm <= 0) {
-      showError('Isi alamat pengirim dan penerima secara lengkap agar jarak terisi otomatis');
+      showError('Isi jarak (KM) terlebih dahulu');
       return;
     }
 
@@ -1412,18 +1476,8 @@ async function handleExpeditionCreate(e) {
     showSuccess(`Shipment berhasil dibuat. Resi: ${data.data.tracking_number}`);
     document.getElementById('expeditionForm').reset();
     document.getElementById('expQuoteResult').textContent = 'Belum ada quote.';
-    // Reset recipient auto-fields; re-fill sender from office (stays readonly)
-    recipientCoords = null;
-    ['expRecipientKecamatan','expRecipientKabupaten','expRecipientProvinsi','expRecipientPostal'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    document.getElementById('expRecipientGeoStatus').textContent = '';
-    document.getElementById('expVehicleAutoNote').textContent = '';
-    document.getElementById('expDistanceNote').textContent = '\u2014 otomatis dari alamat penerima';
     document.getElementById('expVehicleType').disabled = false;
     loadExpeditionOffice();
-    await loadExpeditionShipments();
-    document.getElementById('expVehicleType').disabled = false;
     await loadExpeditionShipments();
   } catch (error) {
     showError(error.message);
