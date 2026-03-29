@@ -51,7 +51,6 @@ function bindEvents() {
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
 
-  document.getElementById('expSenderAddress').addEventListener('input', debounce(() => geocodeAddressForExpedition('sender'), 900));
   document.getElementById('expRecipientAddress').addEventListener('input', debounce(() => geocodeAddressForExpedition('recipient'), 900));
 }
 
@@ -80,6 +79,7 @@ function switchView(view) {
 
   if (view === 'expedition') {
     document.getElementById('moduleTitle').textContent = 'Ekspedisi Pilot Tangerang';
+    loadExpeditionOffice();
     loadExpeditionShipments();
     return;
   }
@@ -1243,6 +1243,29 @@ async function updateApplicantStatus(status) {
 
 // ─── Expedition geocoding helpers ────────────────────────────────────────────
 
+async function loadExpeditionOffice() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/expedition/office`);
+    const data = await res.json();
+    if (!data.success) return;
+    const o = data.data;
+    // Pre-fill sender panel (readonly) with office data
+    document.getElementById('expSenderName').value = o.name || 'Hantar Ekspedisi';
+    document.getElementById('expSenderPhone').value = o.phone || '-';
+    document.getElementById('expSenderAddress').value = o.address || '';
+    document.getElementById('expSenderKecamatan').value = o.kecamatan || '';
+    document.getElementById('expSenderKabupaten').value = o.kabupaten || '';
+    document.getElementById('expSenderPostal').value = o.postal_code || '';
+    document.getElementById('expSenderProvinsi').value = o.provinsi || '';
+    const badge = document.getElementById('expOfficeBadge');
+    if (badge) badge.textContent = o.name || 'Kantor Hantar';
+    // Set sender coordinates so distance calc works immediately on recipient geocode
+    senderCoords = { lat: o.lat, lon: o.lon };
+  } catch (e) {
+    // non-critical
+  }
+}
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1389,17 +1412,17 @@ async function handleExpeditionCreate(e) {
     showSuccess(`Shipment berhasil dibuat. Resi: ${data.data.tracking_number}`);
     document.getElementById('expeditionForm').reset();
     document.getElementById('expQuoteResult').textContent = 'Belum ada quote.';
-    // Reset auto-fields
-    senderCoords = null;
+    // Reset recipient auto-fields; re-fill sender from office (stays readonly)
     recipientCoords = null;
-    ['expSenderKabupaten','expSenderProvinsi','expSenderKecamatan',
-     'expRecipientKecamatan','expRecipientKabupaten','expRecipientProvinsi'].forEach(id => {
+    ['expRecipientKecamatan','expRecipientKabupaten','expRecipientProvinsi','expRecipientPostal'].forEach(id => {
       document.getElementById(id).value = '';
     });
-    document.getElementById('expSenderGeoStatus').textContent = '';
     document.getElementById('expRecipientGeoStatus').textContent = '';
     document.getElementById('expVehicleAutoNote').textContent = '';
-    document.getElementById('expDistanceNote').textContent = '— otomatis dari alamat';
+    document.getElementById('expDistanceNote').textContent = '\u2014 otomatis dari alamat penerima';
+    document.getElementById('expVehicleType').disabled = false;
+    loadExpeditionOffice();
+    await loadExpeditionShipments();
     document.getElementById('expVehicleType').disabled = false;
     await loadExpeditionShipments();
   } catch (error) {

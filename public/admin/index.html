@@ -605,39 +605,41 @@
                                         </select>
                                     </div>
 
-                                    <!-- Sender Panel -->
+                                    <!-- Sender Panel (auto-filled from Hantar office) -->
                                     <div class="col-12">
                                         <div class="border rounded p-3">
-                                            <p class="fw-semibold mb-3 text-secondary" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.05em;">Data Pengirim</p>
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <p class="fw-semibold mb-0 text-secondary" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.05em;">Data Pengirim (Kantor Hantar)</p>
+                                                <span class="badge text-bg-secondary" id="expOfficeBadge">Memuat kantor...</span>
+                                            </div>
                                             <div class="row g-2">
                                                 <div class="col-md-6">
                                                     <label class="form-label">Nama Pengirim</label>
-                                                    <input type="text" class="form-control" id="expSenderName" required>
+                                                    <input type="text" class="form-control bg-light" id="expSenderName" readonly required>
                                                 </div>
                                                 <div class="col-md-6">
                                                     <label class="form-label">No HP Pengirim</label>
-                                                    <input type="text" class="form-control" id="expSenderPhone" required>
+                                                    <input type="text" class="form-control bg-light" id="expSenderPhone" readonly required>
                                                 </div>
                                                 <div class="col-12">
                                                     <label class="form-label">Alamat Detail Pengirim</label>
-                                                    <textarea class="form-control" id="expSenderAddress" rows="2" required placeholder="Nomor rumah, nama jalan, RT/RW, kelurahan, kecamatan..."></textarea>
-                                                    <small id="expSenderGeoStatus" class="text-muted d-block mt-1"></small>
+                                                    <textarea class="form-control bg-light" id="expSenderAddress" rows="2" readonly required></textarea>
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label class="form-label">Kecamatan</label>
-                                                    <input type="text" class="form-control" id="expSenderKecamatan" placeholder="Auto / manual">
+                                                    <input type="text" class="form-control bg-light" id="expSenderKecamatan" readonly>
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label class="form-label">Kabupaten</label>
-                                                    <input type="text" class="form-control bg-light" id="expSenderKabupaten" placeholder="Otomatis" readonly>
+                                                    <input type="text" class="form-control bg-light" id="expSenderKabupaten" readonly>
                                                 </div>
                                                 <div class="col-md-2">
                                                     <label class="form-label">Kode Pos</label>
-                                                    <input type="text" class="form-control" id="expSenderPostal" placeholder="Manual">
+                                                    <input type="text" class="form-control bg-light" id="expSenderPostal" readonly>
                                                 </div>
                                                 <div class="col-md-4">
                                                     <label class="form-label">Provinsi</label>
-                                                    <input type="text" class="form-control bg-light" id="expSenderProvinsi" placeholder="Otomatis" readonly>
+                                                    <input type="text" class="form-control bg-light" id="expSenderProvinsi" readonly>
                                                 </div>
                                             </div>
                                         </div>
@@ -658,7 +660,7 @@
                                                 </div>
                                                 <div class="col-12">
                                                     <label class="form-label">Alamat Detail Penerima</label>
-                                                    <textarea class="form-control" id="expRecipientAddress" rows="2" required placeholder="Nomor rumah, nama jalan, RT/RW, kelurahan, kecamatan..."></textarea>
+                                                    <textarea class="form-control" id="expRecipientAddress" rows="2" required placeholder="Ketik alamat lengkap penerima — kecamatan, kabupaten, dan jarak akan terisi otomatis..."></textarea>
                                                     <small id="expRecipientGeoStatus" class="text-muted d-block mt-1"></small>
                                                 </div>
                                                 <div class="col-md-3">

@@ -17,6 +17,22 @@ const PILOT_CONFIG = {
   },
 };
 
+/**
+ * Titik asal ekspedisi (kantor Hantar).
+ * Di masa depan ini bisa dipindah ke tabel expedition_offices di DB.
+ */
+const HANTAR_OFFICE = {
+  name: 'Hantar Ekspedisi - Kantor Utama',
+  phone: '',
+  address: 'Jalan Ciliwung Raya, Bumi Cibinong Endah',
+  kecamatan: 'Cibinong',
+  kabupaten: 'Kab. Bogor',
+  provinsi: 'Jawa Barat',
+  postal_code: '16913',
+  lat: -6.4793112,
+  lon: 106.8168858,
+};
+
 function normalizeVehicleType(vehicleType = '') {
   const v = String(vehicleType).toLowerCase();
   if (v === 'sepeda' || v === 'bicycle' || v === 'bike') return 'bicycle';
@@ -114,6 +130,14 @@ async function ensureExpeditionTables(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 }
+
+/**
+ * GET /api/expedition/office
+ * Returns the current Hantar office / expedition origin point.
+ */
+router.get('/office', (req, res) => {
+  return res.json({ success: true, data: HANTAR_OFFICE });
+});
 
 /**
  * GET /api/expedition/geocode?address=<text>
