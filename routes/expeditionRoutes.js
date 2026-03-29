@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 
 const PILOT_CONFIG = {
   area: 'Kabupaten Tangerang',
@@ -48,6 +49,8 @@ async function ensureExpeditionTables(db) {
       sender_address TEXT NOT NULL,
       sender_kecamatan VARCHAR(120) NULL,
       sender_kelurahan VARCHAR(120) NULL,
+      sender_kabupaten VARCHAR(120) NULL,
+      sender_provinsi VARCHAR(120) NULL,
       sender_postal_code VARCHAR(10) NULL,
 
       recipient_name VARCHAR(120) NOT NULL,
@@ -55,6 +58,8 @@ async function ensureExpeditionTables(db) {
       recipient_address TEXT NOT NULL,
       recipient_kecamatan VARCHAR(120) NULL,
       recipient_kelurahan VARCHAR(120) NULL,
+      recipient_kabupaten VARCHAR(120) NULL,
+      recipient_provinsi VARCHAR(120) NULL,
       recipient_postal_code VARCHAR(10) NULL,
 
       distance_km DECIMAL(8,2) NOT NULL,
@@ -82,6 +87,17 @@ async function ensureExpeditionTables(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
+  // Migrate: add kabupaten/provinsi columns if they don't exist yet (MySQL 8+)
+  const migrationCols = [
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS sender_kabupaten VARCHAR(120) NULL AFTER sender_kecamatan`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS sender_provinsi VARCHAR(120) NULL AFTER sender_kabupaten`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_kabupaten VARCHAR(120) NULL AFTER recipient_kecamatan`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_provinsi VARCHAR(120) NULL AFTER recipient_kabupaten`,
+  ];
+  for (const sql of migrationCols) {
+    await db.query(sql).catch(() => {});
+  }
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS expedition_shipment_events (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -98,6 +114,63 @@ async function ensureExpeditionTables(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 }
+
+/**
+ * GET /api/expedition/geocode?address=<text>
+ * Proxy to Nominatim (OpenStreetMap) — returns lat, lon + address components
+ */
+router.get('/geocode', async (req, res) => {
+  try {
+    const rawAddress = String(req.query.address || '').trim().slice(0, 500);
+    if (!rawAddress || rawAddress.length < 5) {
+      return res.status(400).json({ success: false, message: 'address terlalu pendek' });
+    }
+
+    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+      params: {
+        q: rawAddress + ', Indonesia',
+        format: 'json',
+        addressdetails: 1,
+        limit: 1,
+        countrycodes: 'id',
+      },
+      headers: {
+        'User-Agent': 'Hantar-Expedition-Pilot/1.0 (admin@primaryline.id)',
+        'Accept-Language': 'id,en',
+      },
+      timeout: 8000,
+    });
+
+    const places = response.data;
+    if (!Array.isArray(places) || places.length === 0) {
+      return res.json({ success: false, message: 'Alamat tidak ditemukan, coba lebih lengkap' });
+    }
+
+    const place = places[0];
+    const addr = place.address || {};
+
+    // Map Nominatim address fields to Indonesian postal hierarchy
+    const kabupaten = addr.county || addr.city || addr.municipality || addr.regency || '';
+    const kecamatan = addr.city_district || addr.suburb || addr.town || addr.village || addr.hamlet || '';
+    const provinsi = addr.state || '';
+    const kodePos = addr.postcode || '';
+
+    return res.json({
+      success: true,
+      data: {
+        lat: parseFloat(place.lat),
+        lon: parseFloat(place.lon),
+        display_name: place.display_name,
+        kabupaten,
+        kecamatan,
+        provinsi,
+        kode_pos: kodePos,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Geocoding gagal', error: error.message });
+  }
+});
 
 /**
  * GET /api/expedition/config
@@ -223,12 +296,16 @@ router.post('/shipments', async (req, res) => {
       sender_address,
       sender_kecamatan,
       sender_kelurahan,
+      sender_kabupaten,
+      sender_provinsi,
       sender_postal_code,
       recipient_name,
       recipient_phone,
       recipient_address,
       recipient_kecamatan,
       recipient_kelurahan,
+      recipient_kabupaten,
+      recipient_provinsi,
       recipient_postal_code,
       distance_km,
       weight_kg,
@@ -275,12 +352,12 @@ router.post('/shipments', async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO expedition_shipments (
         tracking_number, area, service_type, vehicle_type,
-        sender_name, sender_phone, sender_address, sender_kecamatan, sender_kelurahan, sender_postal_code,
-        recipient_name, recipient_phone, recipient_address, recipient_kecamatan, recipient_kelurahan, recipient_postal_code,
+        sender_name, sender_phone, sender_address, sender_kecamatan, sender_kelurahan, sender_kabupaten, sender_provinsi, sender_postal_code,
+        recipient_name, recipient_phone, recipient_address, recipient_kecamatan, recipient_kelurahan, recipient_kabupaten, recipient_provinsi, recipient_postal_code,
         distance_km, weight_kg, length_cm, width_cm, height_cm,
         insurance_enabled, pickup_type, customer_price, driver_commission, platform_margin,
         status, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?)` ,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?)` ,
       [
         trackingNumber,
         PILOT_CONFIG.area,
@@ -291,12 +368,16 @@ router.post('/shipments', async (req, res) => {
         sender_address,
         sender_kecamatan || null,
         sender_kelurahan || null,
+        sender_kabupaten || null,
+        sender_provinsi || null,
         sender_postal_code || null,
         recipient_name,
         recipient_phone,
         recipient_address,
         recipient_kecamatan || null,
         recipient_kelurahan || null,
+        recipient_kabupaten || null,
+        recipient_provinsi || null,
         recipient_postal_code || null,
         distanceKm,
         weight_kg || null,

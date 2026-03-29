@@ -568,15 +568,17 @@
                     <div class="card content-card mb-4">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span class="fw-semibold"><i class="fas fa-box me-2"></i>Input Kiriman Ekspedisi (Kab. Tangerang)</span>
-                            <span class="badge text-bg-primary">Pilot <= 5 KM</span>
+                            <span class="badge text-bg-primary">Pilot</span>
                         </div>
                         <div class="card-body">
                             <div class="alert alert-info mb-3">
-                                Tarif pilot aktif: <strong>Sepeda Rp10.000</strong> (maksimal 5 KM) dan <strong>Motor Rp20.000</strong> (boleh >5 KM) selama masih dalam Kabupaten Tangerang.
+                                Tarif pilot aktif: <strong>Sepeda Rp10.000</strong> (maksimal 5 KM) dan <strong>Motor Rp20.000</strong> (boleh &gt;5 KM) selama masih dalam Kabupaten Tangerang.
                                 Komisi driver: Sepeda Rp4.000, Motor Rp8.000.
                             </div>
                             <form id="expeditionForm">
                                 <div class="row g-3">
+
+                                    <!-- Row 1: Layanan / Moda / Jarak / Intake -->
                                     <div class="col-md-3">
                                         <label class="form-label">Layanan</label>
                                         <select class="form-select" id="expServiceType" required>
@@ -585,15 +587,15 @@
                                         </select>
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">Moda</label>
+                                        <label class="form-label">Moda <span id="expVehicleAutoNote" class="text-muted" style="font-size:0.75rem;"></span></label>
                                         <select class="form-select" id="expVehicleType" required>
                                             <option value="bicycle">Sepeda</option>
                                             <option value="motorcycle">Motor</option>
                                         </select>
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">Jarak (KM)</label>
-                                        <input type="number" step="0.1" min="0.1" class="form-control" id="expDistanceKm" required>
+                                        <label class="form-label">Jarak (KM) <span id="expDistanceNote" class="text-muted" style="font-size:0.75rem;">— otomatis dari alamat</span></label>
+                                        <input type="number" step="0.1" min="0.1" class="form-control bg-light" id="expDistanceKm" readonly placeholder="Otomatis..." required>
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label">Tipe Intake</label>
@@ -603,48 +605,83 @@
                                         </select>
                                     </div>
 
-                                    <div class="col-md-6">
-                                        <label class="form-label">Nama Pengirim</label>
-                                        <input type="text" class="form-control" id="expSenderName" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">No HP Pengirim</label>
-                                        <input type="text" class="form-control" id="expSenderPhone" required>
-                                    </div>
-                                    <div class="col-md-8">
-                                        <label class="form-label">Alamat Pengirim</label>
-                                        <textarea class="form-control" id="expSenderAddress" rows="2" required></textarea>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Kecamatan</label>
-                                        <input type="text" class="form-control" id="expSenderKecamatan">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Kode Pos</label>
-                                        <input type="text" class="form-control" id="expSenderPostal">
-                                    </div>
-
-                                    <div class="col-md-6">
-                                        <label class="form-label">Nama Penerima</label>
-                                        <input type="text" class="form-control" id="expRecipientName" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">No HP Penerima</label>
-                                        <input type="text" class="form-control" id="expRecipientPhone" required>
-                                    </div>
-                                    <div class="col-md-8">
-                                        <label class="form-label">Alamat Penerima</label>
-                                        <textarea class="form-control" id="expRecipientAddress" rows="2" required></textarea>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Kecamatan</label>
-                                        <input type="text" class="form-control" id="expRecipientKecamatan">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Kode Pos</label>
-                                        <input type="text" class="form-control" id="expRecipientPostal">
+                                    <!-- Sender Panel -->
+                                    <div class="col-12">
+                                        <div class="border rounded p-3">
+                                            <p class="fw-semibold mb-3 text-secondary" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.05em;">Data Pengirim</p>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Nama Pengirim</label>
+                                                    <input type="text" class="form-control" id="expSenderName" required>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">No HP Pengirim</label>
+                                                    <input type="text" class="form-control" id="expSenderPhone" required>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">Alamat Detail Pengirim</label>
+                                                    <textarea class="form-control" id="expSenderAddress" rows="2" required placeholder="Nomor rumah, nama jalan, RT/RW, kelurahan, kecamatan..."></textarea>
+                                                    <small id="expSenderGeoStatus" class="text-muted d-block mt-1"></small>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Kecamatan</label>
+                                                    <input type="text" class="form-control" id="expSenderKecamatan" placeholder="Auto / manual">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Kabupaten</label>
+                                                    <input type="text" class="form-control bg-light" id="expSenderKabupaten" placeholder="Otomatis" readonly>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label class="form-label">Kode Pos</label>
+                                                    <input type="text" class="form-control" id="expSenderPostal" placeholder="Manual">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">Provinsi</label>
+                                                    <input type="text" class="form-control bg-light" id="expSenderProvinsi" placeholder="Otomatis" readonly>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
+                                    <!-- Recipient Panel -->
+                                    <div class="col-12">
+                                        <div class="border rounded p-3 bg-light bg-opacity-50">
+                                            <p class="fw-semibold mb-3 text-secondary" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.05em;">Data Penerima</p>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Nama Penerima</label>
+                                                    <input type="text" class="form-control" id="expRecipientName" required>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">No HP Penerima</label>
+                                                    <input type="text" class="form-control" id="expRecipientPhone" required>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">Alamat Detail Penerima</label>
+                                                    <textarea class="form-control" id="expRecipientAddress" rows="2" required placeholder="Nomor rumah, nama jalan, RT/RW, kelurahan, kecamatan..."></textarea>
+                                                    <small id="expRecipientGeoStatus" class="text-muted d-block mt-1"></small>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Kecamatan</label>
+                                                    <input type="text" class="form-control bg-light" id="expRecipientKecamatan" placeholder="Otomatis" readonly>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Kabupaten</label>
+                                                    <input type="text" class="form-control bg-light" id="expRecipientKabupaten" placeholder="Otomatis" readonly>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label class="form-label">Kode Pos</label>
+                                                    <input type="text" class="form-control" id="expRecipientPostal" placeholder="Manual">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label">Provinsi</label>
+                                                    <input type="text" class="form-control bg-light" id="expRecipientProvinsi" placeholder="Otomatis" readonly>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Dimensions -->
                                     <div class="col-md-2">
                                         <label class="form-label">Berat (KG)</label>
                                         <input type="number" step="0.1" min="0" class="form-control" id="expWeightKg">

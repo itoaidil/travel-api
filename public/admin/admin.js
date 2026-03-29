@@ -9,6 +9,8 @@ let currentApplicantId = null;
 let jobsCache = [];
 let applicantsCache = [];
 let expeditionCache = [];
+let senderCoords = null;
+let recipientCoords = null;
 let driverStatusChartInstance = null;
 let franchiseStatusChartInstance = null;
 
@@ -48,6 +50,9 @@ function bindEvents() {
   document.getElementById('expRefreshBtn').addEventListener('click', loadExpeditionShipments);
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
+
+  document.getElementById('expSenderAddress').addEventListener('input', debounce(() => geocodeAddressForExpedition('sender'), 900));
+  document.getElementById('expRecipientAddress').addEventListener('input', debounce(() => geocodeAddressForExpedition('recipient'), 900));
 }
 
 function switchView(view) {
@@ -1236,13 +1241,94 @@ async function updateApplicantStatus(status) {
   }
 }
 
+// ─── Expedition geocoding helpers ────────────────────────────────────────────
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function updateAutoDistanceVehicle() {
+  if (!senderCoords || !recipientCoords) return;
+
+  const km = haversineKm(senderCoords.lat, senderCoords.lon, recipientCoords.lat, recipientCoords.lon);
+  const kmRounded = Math.round(km * 10) / 10;
+
+  const distInput = document.getElementById('expDistanceKm');
+  const vehicleSelect = document.getElementById('expVehicleType');
+  const vehicleNote = document.getElementById('expVehicleAutoNote');
+  const distNote = document.getElementById('expDistanceNote');
+
+  distInput.value = kmRounded;
+  distNote.textContent = `— ${kmRounded} KM terisi otomatis`;
+
+  if (kmRounded >= 5) {
+    vehicleSelect.value = 'motorcycle';
+    vehicleSelect.disabled = true;
+    vehicleNote.textContent = '(otomatis Motor — jarak ≥5 KM)';
+    vehicleNote.style.color = '#0d6efd';
+  } else {
+    vehicleSelect.disabled = false;
+    vehicleNote.textContent = '(pilih Sepeda atau Motor)';
+    vehicleNote.style.color = '#6c757d';
+  }
+}
+
+async function geocodeAddressForExpedition(type) {
+  const isRecipient = type === 'recipient';
+  const addressEl = document.getElementById(isRecipient ? 'expRecipientAddress' : 'expSenderAddress');
+  const statusEl = document.getElementById(isRecipient ? 'expRecipientGeoStatus' : 'expSenderGeoStatus');
+  const address = addressEl.value.trim();
+
+  if (!address || address.length < 10) return;
+
+  statusEl.textContent = '⏳ Mencari koordinat alamat...';
+  statusEl.style.color = '#6c757d';
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/expedition/geocode?address=${encodeURIComponent(address)}`);
+    const data = await res.json();
+
+    if (!data.success) {
+      statusEl.textContent = `⚠ ${data.message}`;
+      statusEl.style.color = '#dc3545';
+      return;
+    }
+
+    const d = data.data;
+    statusEl.textContent = `✓ Ditemukan: ${d.display_name.slice(0, 80)}...`;
+    statusEl.style.color = '#198754';
+
+    if (isRecipient) {
+      recipientCoords = { lat: d.lat, lon: d.lon };
+      if (d.kecamatan) document.getElementById('expRecipientKecamatan').value = d.kecamatan;
+      if (d.kabupaten) document.getElementById('expRecipientKabupaten').value = d.kabupaten;
+      if (d.provinsi) document.getElementById('expRecipientProvinsi').value = d.provinsi;
+    } else {
+      senderCoords = { lat: d.lat, lon: d.lon };
+      if (d.kecamatan) document.getElementById('expSenderKecamatan').value = d.kecamatan;
+      if (d.kabupaten) document.getElementById('expSenderKabupaten').value = d.kabupaten;
+      if (d.provinsi) document.getElementById('expSenderProvinsi').value = d.provinsi;
+    }
+
+    updateAutoDistanceVehicle();
+  } catch (err) {
+    statusEl.textContent = '⚠ Geocoding gagal, isi manual';
+    statusEl.style.color = '#dc3545';
+  }
+}
+
 async function handleExpeditionQuote() {
   try {
     const vehicleType = document.getElementById('expVehicleType').value;
     const distanceKm = parseFloat(document.getElementById('expDistanceKm').value || '0');
 
     if (!distanceKm || distanceKm <= 0) {
-      showError('Isi jarak (KM) terlebih dahulu');
+      showError('Isi alamat pengirim dan penerima secara lengkap agar jarak terisi otomatis');
       return;
     }
 
@@ -1272,12 +1358,16 @@ async function handleExpeditionCreate(e) {
       sender_phone: document.getElementById('expSenderPhone').value.trim(),
       sender_address: document.getElementById('expSenderAddress').value.trim(),
       sender_kecamatan: document.getElementById('expSenderKecamatan').value.trim(),
+      sender_kabupaten: document.getElementById('expSenderKabupaten').value.trim(),
+      sender_provinsi: document.getElementById('expSenderProvinsi').value.trim(),
       sender_postal_code: document.getElementById('expSenderPostal').value.trim(),
 
       recipient_name: document.getElementById('expRecipientName').value.trim(),
       recipient_phone: document.getElementById('expRecipientPhone').value.trim(),
       recipient_address: document.getElementById('expRecipientAddress').value.trim(),
       recipient_kecamatan: document.getElementById('expRecipientKecamatan').value.trim(),
+      recipient_kabupaten: document.getElementById('expRecipientKabupaten').value.trim(),
+      recipient_provinsi: document.getElementById('expRecipientProvinsi').value.trim(),
       recipient_postal_code: document.getElementById('expRecipientPostal').value.trim(),
 
       weight_kg: parseFloat(document.getElementById('expWeightKg').value || '0') || null,
@@ -1299,6 +1389,18 @@ async function handleExpeditionCreate(e) {
     showSuccess(`Shipment berhasil dibuat. Resi: ${data.data.tracking_number}`);
     document.getElementById('expeditionForm').reset();
     document.getElementById('expQuoteResult').textContent = 'Belum ada quote.';
+    // Reset auto-fields
+    senderCoords = null;
+    recipientCoords = null;
+    ['expSenderKabupaten','expSenderProvinsi','expSenderKecamatan',
+     'expRecipientKecamatan','expRecipientKabupaten','expRecipientProvinsi'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('expSenderGeoStatus').textContent = '';
+    document.getElementById('expRecipientGeoStatus').textContent = '';
+    document.getElementById('expVehicleAutoNote').textContent = '';
+    document.getElementById('expDistanceNote').textContent = '— otomatis dari alamat';
+    document.getElementById('expVehicleType').disabled = false;
     await loadExpeditionShipments();
   } catch (error) {
     showError(error.message);
