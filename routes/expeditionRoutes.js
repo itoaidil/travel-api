@@ -1451,23 +1451,7 @@ async function fetchJson(url) {
   return res.data;
 }
 
-async function addLatLonIfMissing(db) {
-  const alterSqls = [
-    `ALTER TABLE expedition_master_provinces ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
-    `ALTER TABLE expedition_master_provinces ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
-    `ALTER TABLE expedition_master_regencies ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
-    `ALTER TABLE expedition_master_regencies ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
-    `ALTER TABLE expedition_master_districts ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
-    `ALTER TABLE expedition_master_districts ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
-  ];
-  for (const sql of alterSqls) {
-    await db.query(sql).catch(() => {});
-  }
-}
-
 async function seedWilayahFromApi(db) {
-  await addLatLonIfMissing(db);
-
   const [[{ cnt: provCount }]] = await db.query('SELECT COUNT(*) AS cnt FROM expedition_master_provinces');
   if (provCount > 0) {
     return { skipped: true, message: 'Tabel sudah terisi, seed dilewati', provinces: provCount };
@@ -1481,11 +1465,11 @@ async function seedWilayahFromApi(db) {
   // Insert provinces
   for (let i = 0; i < provinces.length; i += CHUNK) {
     const chunk = provinces.slice(i, i + CHUNK);
-    const placeholders = chunk.map(() => '(?,?,0,0,1)').join(',');
+    const placeholders = chunk.map(() => '(?,?,1)').join(',');
     const vals = [];
     chunk.forEach((p) => { vals.push(String(p.id), String(p.name)); });
     await db.query(
-      `INSERT INTO expedition_master_provinces (code, name, latitude, longitude, is_active) VALUES ${placeholders}
+      `INSERT INTO expedition_master_provinces (code, name, is_active) VALUES ${placeholders}
        ON DUPLICATE KEY UPDATE name=VALUES(name)`,
       vals
     );
@@ -1498,11 +1482,11 @@ async function seedWilayahFromApi(db) {
 
     for (let i = 0; i < regencies.length; i += CHUNK) {
       const chunk = regencies.slice(i, i + CHUNK);
-      const placeholders = chunk.map(() => '(?,?,?,0,0,1)').join(',');
+      const placeholders = chunk.map(() => '(?,?,?,1)').join(',');
       const vals = [];
       chunk.forEach((r) => { vals.push(String(r.id), String(prov.id), String(r.name)); });
       await db.query(
-        `INSERT INTO expedition_master_regencies (code, province_code, name, latitude, longitude, is_active) VALUES ${placeholders}
+        `INSERT INTO expedition_master_regencies (code, province_code, name, is_active) VALUES ${placeholders}
          ON DUPLICATE KEY UPDATE name=VALUES(name)`,
         vals
       );
@@ -1514,11 +1498,11 @@ async function seedWilayahFromApi(db) {
 
       for (let i = 0; i < districts.length; i += CHUNK) {
         const chunk = districts.slice(i, i + CHUNK);
-        const placeholders = chunk.map(() => '(?,?,?,0,0,1)').join(',');
+        const placeholders = chunk.map(() => '(?,?,?,1)').join(',');
         const vals = [];
         chunk.forEach((d) => { vals.push(String(d.id), String(reg.id), String(d.name)); });
         await db.query(
-          `INSERT INTO expedition_master_districts (code, regency_code, name, latitude, longitude, is_active) VALUES ${placeholders}
+          `INSERT INTO expedition_master_districts (code, regency_code, name, is_active) VALUES ${placeholders}
            ON DUPLICATE KEY UPDATE name=VALUES(name)`,
           vals
         );
@@ -1576,7 +1560,6 @@ router.get('/admin/seed-wilayah/status', async (req, res) => {
     if (!db) return res.status(503).json({ success: false, message: 'Database unavailable' });
 
     await ensureExpeditionTables(db);
-    await addLatLonIfMissing(db);
 
     const [[{ provinces }]] = await db.query('SELECT COUNT(*) AS provinces FROM expedition_master_provinces');
     const [[{ regencies }]] = await db.query('SELECT COUNT(*) AS regencies FROM expedition_master_regencies');
