@@ -1444,7 +1444,11 @@ router.get('/shipments/:id/events', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const WILAYAH_API = 'https://www.emsifa.com/api-wilayah-indonesia/api';
-const SEED_TOKEN = process.env.Admin_SEED_TOKEN || 'hantar-seed-wilayah-2026';
+const SEED_TOKEN = String(
+  process.env.ADMIN_SEED_TOKEN ||
+  process.env.Admin_SEED_TOKEN ||
+  'hantar-seed-wilayah-2026'
+).trim();
 
 async function fetchJson(url) {
   const res = await axios.get(url, { timeout: 30000 });
@@ -1523,7 +1527,7 @@ async function seedWilayahFromApi(db) {
  * Header: X-Admin-Seed-Token: <ADMIN_SEED_TOKEN>
  */
 router.post('/admin/seed-wilayah', async (req, res) => {
-  const token = req.headers['x-admin-seed-token'];
+  const token = String(req.headers['x-admin-seed-token'] || '').trim();
   if (!token || token !== SEED_TOKEN) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
@@ -1550,7 +1554,7 @@ router.post('/admin/seed-wilayah', async (req, res) => {
  * Cek jumlah baris di tabel master wilayah.
  */
 router.get('/admin/seed-wilayah/status', async (req, res) => {
-  const token = req.headers['x-admin-seed-token'];
+  const token = String(req.headers['x-admin-seed-token'] || '').trim();
   if (!token || token !== SEED_TOKEN) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }

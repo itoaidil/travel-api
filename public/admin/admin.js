@@ -1571,8 +1571,10 @@ function getExpeditionSeedToken() {
   const saved = localStorage.getItem('exp_seed_token') || '';
   const token = window.prompt('Masukkan X-Admin-Seed-Token untuk master wilayah:', saved || '');
   if (!token) return null;
-  localStorage.setItem('exp_seed_token', token);
-  return token;
+  const normalized = String(token).trim();
+  if (!normalized) return null;
+  localStorage.setItem('exp_seed_token', normalized);
+  return normalized;
 }
 
 async function loadExpeditionWilayahSeedStatus() {
