@@ -9,7 +9,9 @@
     "dev": "nodemon server.js",
     "seed:local": "node migrations/seed_initial_data.js",
     "seed:railway": "node migrations/seed_railway_data.js",
-    "migrate:base": "node migrations/run_base_migrations.js"
+    "migrate:base": "node migrations/run_base_migrations.js",
+    "import:regions": "node scripts/import_indonesia_regions.js",
+    "import:regions:sql": "node scripts/import_wilayah_sql_one_shot.js"
   },
   "keywords": [
     "travel",

@@ -147,6 +147,7 @@ async function ensureExpeditionTables(db) {
       sender_phone VARCHAR(30) NOT NULL,
       sender_address TEXT NOT NULL,
       sender_kecamatan VARCHAR(120) NULL,
+      sender_district_code VARCHAR(20) NULL,
       sender_kelurahan VARCHAR(120) NULL,
       sender_kabupaten VARCHAR(120) NULL,
       sender_provinsi VARCHAR(120) NULL,
@@ -156,6 +157,7 @@ async function ensureExpeditionTables(db) {
       recipient_phone VARCHAR(30) NOT NULL,
       recipient_address TEXT NOT NULL,
       recipient_kecamatan VARCHAR(120) NULL,
+      recipient_district_code VARCHAR(20) NULL,
       recipient_kelurahan VARCHAR(120) NULL,
       recipient_kabupaten VARCHAR(120) NULL,
       recipient_provinsi VARCHAR(120) NULL,
@@ -195,6 +197,8 @@ async function ensureExpeditionTables(db) {
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS sender_provinsi VARCHAR(120) NULL AFTER sender_kabupaten`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_kabupaten VARCHAR(120) NULL AFTER recipient_kecamatan`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_provinsi VARCHAR(120) NULL AFTER recipient_kabupaten`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS sender_district_code VARCHAR(20) NULL AFTER sender_kecamatan`,
+    `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS recipient_district_code VARCHAR(20) NULL AFTER recipient_kecamatan`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS volumetric_weight_kg DECIMAL(10,2) NULL AFTER weight_kg`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS chargeable_weight_kg DECIMAL(10,2) NULL AFTER volumetric_weight_kg`,
     `ALTER TABLE expedition_shipments ADD COLUMN IF NOT EXISTS pricing_breakdown_json JSON NULL AFTER platform_margin`,
@@ -304,6 +308,69 @@ async function ensureExpeditionTables(db) {
   }
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_master_provinces (
+      code VARCHAR(10) PRIMARY KEY,
+      name VARCHAR(120) NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_prov_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_master_regencies (
+      code VARCHAR(10) PRIMARY KEY,
+      province_code VARCHAR(10) NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_reg_province (province_code),
+      INDEX idx_reg_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_master_districts (
+      code VARCHAR(20) PRIMARY KEY,
+      regency_code VARCHAR(10) NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_dist_regency (regency_code),
+      INDEX idx_dist_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS expedition_zone_routes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      origin_district_code VARCHAR(20) NOT NULL,
+      destination_district_code VARCHAR(20) NOT NULL,
+      service_type VARCHAR(40) NOT NULL DEFAULT 'all',
+      vehicle_type ENUM('all','bicycle','motorcycle') NOT NULL DEFAULT 'all',
+      transport_mode ENUM('all','land','sea') NOT NULL DEFAULT 'all',
+
+      override_volumetric_divisor INT NULL,
+      override_base_fee INT NULL,
+      override_rate_per_km INT NULL,
+      override_rate_per_kg INT NULL,
+      override_minimum_charge INT NULL,
+
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      notes TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+      UNIQUE KEY uniq_zone_rule (origin_district_code, destination_district_code, service_type, vehicle_type, transport_mode),
+      INDEX idx_zone_active (is_active),
+      INDEX idx_zone_origin_dest (origin_district_code, destination_district_code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS expedition_shipment_events (
       id INT AUTO_INCREMENT PRIMARY KEY,
       shipment_id INT NOT NULL,
@@ -361,6 +428,66 @@ async function getMinimumCharge(db, serviceType, vehicleType) {
   );
 
   return rows.length ? toNumber(rows[0].minimum_charge, 0) : 0;
+}
+
+async function getZoneRouteOverride(db, {
+  originDistrictCode,
+  destinationDistrictCode,
+  serviceType,
+  vehicleType,
+  transportMode,
+}) {
+  const origin = String(originDistrictCode || '').trim();
+  const destination = String(destinationDistrictCode || '').trim();
+  if (!origin || !destination) return null;
+
+  const normalizedService = normalizeServiceType(serviceType);
+  const mode = transportMode === 'sea' ? 'sea' : 'land';
+
+  const [rows] = await db.query(
+    `SELECT *
+     FROM expedition_zone_routes
+     WHERE is_active = 1
+       AND origin_district_code = ?
+       AND destination_district_code = ?
+       AND service_type IN (?, 'all')
+       AND vehicle_type IN (?, 'all')
+       AND transport_mode IN (?, 'all')
+     ORDER BY
+       (service_type = ?) DESC,
+       (vehicle_type = ?) DESC,
+       (transport_mode = ?) DESC
+     LIMIT 1`,
+    [origin, destination, normalizedService, vehicleType, mode, normalizedService, vehicleType, mode]
+  );
+
+  return rows.length ? rows[0] : null;
+}
+
+function applyZoneOverride(serviceConfig, minimumCharge, zoneRoute) {
+  if (!zoneRoute) {
+    return {
+      effectiveServiceConfig: serviceConfig,
+      effectiveMinimumCharge: minimumCharge,
+      zoneRouteApplied: false,
+    };
+  }
+
+  const effectiveServiceConfig = {
+    ...serviceConfig,
+    volumetric_divisor: zoneRoute.override_volumetric_divisor ?? serviceConfig.volumetric_divisor,
+    base_fee: zoneRoute.override_base_fee ?? serviceConfig.base_fee,
+    rate_per_km: zoneRoute.override_rate_per_km ?? serviceConfig.rate_per_km,
+    rate_per_kg: zoneRoute.override_rate_per_kg ?? serviceConfig.rate_per_kg,
+  };
+
+  const effectiveMinimumCharge = zoneRoute.override_minimum_charge ?? minimumCharge;
+
+  return {
+    effectiveServiceConfig,
+    effectiveMinimumCharge,
+    zoneRouteApplied: true,
+  };
 }
 
 function calculatePriceByFormula({
@@ -610,6 +737,220 @@ router.post('/pricing/minimum-charges/upsert', async (req, res) => {
   }
 });
 
+router.get('/pricing/zone-routes', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+
+    const serviceType = String(req.query.service_type || '').trim().toLowerCase();
+    const vehicleType = String(req.query.vehicle_type || '').trim().toLowerCase();
+    const originDistrictCode = String(req.query.origin_district_code || '').trim();
+    const destinationDistrictCode = String(req.query.destination_district_code || '').trim();
+
+    const where = ['is_active = 1'];
+    const params = [];
+
+    if (serviceType) {
+      where.push('service_type = ?');
+      params.push(serviceType);
+    }
+    if (vehicleType) {
+      where.push('vehicle_type = ?');
+      params.push(vehicleType);
+    }
+    if (originDistrictCode) {
+      where.push('origin_district_code = ?');
+      params.push(originDistrictCode);
+    }
+    if (destinationDistrictCode) {
+      where.push('destination_district_code = ?');
+      params.push(destinationDistrictCode);
+    }
+
+    const [rows] = await db.query(
+      `SELECT *
+       FROM expedition_zone_routes
+       WHERE ${where.join(' AND ')}
+       ORDER BY id DESC
+       LIMIT 500`,
+      params
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load zone routes', error: error.message });
+  }
+});
+
+router.post('/pricing/zone-routes/upsert', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    await ensureExpeditionTables(db);
+
+    const {
+      origin_district_code,
+      destination_district_code,
+      service_type = 'all',
+      vehicle_type = 'all',
+      transport_mode = 'all',
+      override_volumetric_divisor = null,
+      override_base_fee = null,
+      override_rate_per_km = null,
+      override_rate_per_kg = null,
+      override_minimum_charge = null,
+      is_active = 1,
+      notes = null,
+    } = req.body || {};
+
+    const origin = String(origin_district_code || '').trim();
+    const destination = String(destination_district_code || '').trim();
+    if (!origin || !destination) {
+      return res.status(400).json({ success: false, message: 'origin_district_code dan destination_district_code wajib diisi' });
+    }
+
+    const normalizedService = String(service_type || 'all').trim().toLowerCase() || 'all';
+    const normalizedVehicle = vehicle_type === 'all' ? 'all' : normalizeVehicleType(vehicle_type);
+    const normalizedMode = String(transport_mode || 'all').toLowerCase() === 'sea'
+      ? 'sea'
+      : (String(transport_mode || 'all').toLowerCase() === 'land' ? 'land' : 'all');
+
+    if (!normalizedVehicle) {
+      return res.status(400).json({ success: false, message: 'vehicle_type tidak valid' });
+    }
+
+    await db.query(
+      `INSERT INTO expedition_zone_routes (
+        origin_district_code, destination_district_code,
+        service_type, vehicle_type, transport_mode,
+        override_volumetric_divisor, override_base_fee, override_rate_per_km, override_rate_per_kg, override_minimum_charge,
+        is_active, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        override_volumetric_divisor = VALUES(override_volumetric_divisor),
+        override_base_fee = VALUES(override_base_fee),
+        override_rate_per_km = VALUES(override_rate_per_km),
+        override_rate_per_kg = VALUES(override_rate_per_kg),
+        override_minimum_charge = VALUES(override_minimum_charge),
+        is_active = VALUES(is_active),
+        notes = VALUES(notes)`,
+      [
+        origin,
+        destination,
+        normalizedService,
+        normalizedVehicle,
+        normalizedMode,
+        override_volumetric_divisor == null ? null : Math.max(1, roundToInt(override_volumetric_divisor)),
+        override_base_fee == null ? null : roundToInt(override_base_fee),
+        override_rate_per_km == null ? null : roundToInt(override_rate_per_km),
+        override_rate_per_kg == null ? null : roundToInt(override_rate_per_kg),
+        override_minimum_charge == null ? null : roundToInt(override_minimum_charge),
+        is_active ? 1 : 0,
+        notes,
+      ]
+    );
+
+    return res.json({ success: true, message: 'Zone route pricing tersimpan' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to upsert zone route pricing', error: error.message });
+  }
+});
+
+router.get('/master/provinces', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+    await ensureExpeditionTables(db);
+
+    const [rows] = await db.query(
+      `SELECT code, name
+       FROM expedition_master_provinces
+       WHERE is_active = 1
+       ORDER BY name ASC`
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load provinces', error: error.message });
+  }
+});
+
+router.get('/master/regencies', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+    await ensureExpeditionTables(db);
+
+    const provinceCode = String(req.query.province_code || '').trim();
+    const where = ['is_active = 1'];
+    const params = [];
+    if (provinceCode) {
+      where.push('province_code = ?');
+      params.push(provinceCode);
+    }
+
+    const [rows] = await db.query(
+      `SELECT code, province_code, name
+       FROM expedition_master_regencies
+       WHERE ${where.join(' AND ')}
+       ORDER BY name ASC`,
+      params
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load regencies', error: error.message });
+  }
+});
+
+router.get('/master/districts', async (req, res) => {
+  try {
+    const db = req.db;
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+    await ensureExpeditionTables(db);
+
+    const regencyCode = String(req.query.regency_code || '').trim();
+    const search = String(req.query.search || '').trim();
+    const where = ['is_active = 1'];
+    const params = [];
+
+    if (regencyCode) {
+      where.push('regency_code = ?');
+      params.push(regencyCode);
+    }
+    if (search) {
+      where.push('name LIKE ?');
+      params.push(`%${search}%`);
+    }
+
+    const [rows] = await db.query(
+      `SELECT code, regency_code, name
+       FROM expedition_master_districts
+       WHERE ${where.join(' AND ')}
+       ORDER BY name ASC
+       LIMIT 1000`,
+      params
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load districts', error: error.message });
+  }
+});
+
 /**
  * GET /api/expedition/office
  * Returns the current Hantar office / expedition origin point.
@@ -698,6 +1039,9 @@ router.get('/quote', async (req, res) => {
     const {
       vehicle_type,
       service_type = 'regular',
+      transport_mode = 'land',
+      origin_district_code,
+      destination_district_code,
       distance_km,
       weight_kg,
       length_cm,
@@ -727,6 +1071,19 @@ router.get('/quote', async (req, res) => {
 
     const serviceConfig = await getServicePricing(db, normalizedService, normalized);
     const minimumCharge = await getMinimumCharge(db, normalizedService, normalized);
+    const zoneRoute = await getZoneRouteOverride(db, {
+      originDistrictCode: origin_district_code,
+      destinationDistrictCode: destination_district_code,
+      serviceType: normalizedService,
+      vehicleType: normalized,
+      transportMode: transport_mode,
+    });
+    const { effectiveServiceConfig, effectiveMinimumCharge, zoneRouteApplied } = applyZoneOverride(
+      serviceConfig,
+      minimumCharge,
+      zoneRoute
+    );
+
     const pricing = calculatePriceByFormula({
       distanceKm,
       weightKg: weight_kg,
@@ -734,8 +1091,8 @@ router.get('/quote', async (req, res) => {
       widthCm: width_cm,
       heightCm: height_cm,
       insuranceEnabled: String(insurance_enabled).toLowerCase() === 'true',
-      serviceConfig,
-      minimumCharge,
+      serviceConfig: effectiveServiceConfig,
+      minimumCharge: effectiveMinimumCharge,
     });
 
     return res.json({
@@ -752,7 +1109,9 @@ router.get('/quote', async (req, res) => {
         volumetric_weight_kg: pricing.volumetric_weight_kg,
         chargeable_weight_kg: pricing.chargeable_weight_kg,
         volumetric_divisor: pricing.volumetric_divisor,
-        minimum_charge: minimumCharge,
+        minimum_charge: effectiveMinimumCharge,
+        zone_route_applied: zoneRouteApplied,
+        zone_route_id: zoneRoute ? zoneRoute.id : null,
         breakdown: pricing.breakdown,
       },
     });
@@ -834,6 +1193,7 @@ router.post('/shipments', async (req, res) => {
       sender_phone,
       sender_address,
       sender_kecamatan,
+      sender_district_code,
       sender_kelurahan,
       sender_kabupaten,
       sender_provinsi,
@@ -842,6 +1202,7 @@ router.post('/shipments', async (req, res) => {
       recipient_phone,
       recipient_address,
       recipient_kecamatan,
+      recipient_district_code,
       recipient_kelurahan,
       recipient_kabupaten,
       recipient_provinsi,
@@ -853,6 +1214,7 @@ router.post('/shipments', async (req, res) => {
       height_cm,
       insurance_enabled = false,
       pickup_type = 'pickup',
+      transport_mode = 'land',
       notes,
       created_by,
     } = req.body;
@@ -885,6 +1247,19 @@ router.post('/shipments', async (req, res) => {
 
     const serviceConfig = await getServicePricing(db, normalizedService, normalizedVehicle);
     const minimumCharge = await getMinimumCharge(db, normalizedService, normalizedVehicle);
+    const zoneRoute = await getZoneRouteOverride(db, {
+      originDistrictCode: sender_district_code,
+      destinationDistrictCode: recipient_district_code,
+      serviceType: normalizedService,
+      vehicleType: normalizedVehicle,
+      transportMode: transport_mode,
+    });
+    const { effectiveServiceConfig, effectiveMinimumCharge, zoneRouteApplied } = applyZoneOverride(
+      serviceConfig,
+      minimumCharge,
+      zoneRoute
+    );
+
     const pricing = calculatePriceByFormula({
       distanceKm,
       weightKg: weight_kg,
@@ -892,8 +1267,8 @@ router.post('/shipments', async (req, res) => {
       widthCm: width_cm,
       heightCm: height_cm,
       insuranceEnabled: Boolean(insurance_enabled),
-      serviceConfig,
-      minimumCharge,
+      serviceConfig: effectiveServiceConfig,
+      minimumCharge: effectiveMinimumCharge,
     });
 
     const customerPrice = pricing.customer_price;
@@ -904,12 +1279,12 @@ router.post('/shipments', async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO expedition_shipments (
         tracking_number, area, service_type, vehicle_type,
-        sender_name, sender_phone, sender_address, sender_kecamatan, sender_kelurahan, sender_kabupaten, sender_provinsi, sender_postal_code,
-        recipient_name, recipient_phone, recipient_address, recipient_kecamatan, recipient_kelurahan, recipient_kabupaten, recipient_provinsi, recipient_postal_code,
+        sender_name, sender_phone, sender_address, sender_kecamatan, sender_district_code, sender_kelurahan, sender_kabupaten, sender_provinsi, sender_postal_code,
+        recipient_name, recipient_phone, recipient_address, recipient_kecamatan, recipient_district_code, recipient_kelurahan, recipient_kabupaten, recipient_provinsi, recipient_postal_code,
         distance_km, weight_kg, volumetric_weight_kg, chargeable_weight_kg, length_cm, width_cm, height_cm,
         insurance_enabled, pickup_type, customer_price, driver_commission, platform_margin,
         pricing_breakdown_json, status, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         trackingNumber,
         PILOT_CONFIG.area,
@@ -919,6 +1294,7 @@ router.post('/shipments', async (req, res) => {
         sender_phone,
         sender_address,
         sender_kecamatan || null,
+        sender_district_code || null,
         sender_kelurahan || null,
         sender_kabupaten || null,
         sender_provinsi || null,
@@ -927,6 +1303,7 @@ router.post('/shipments', async (req, res) => {
         recipient_phone,
         recipient_address,
         recipient_kecamatan || null,
+        recipient_district_code || null,
         recipient_kelurahan || null,
         recipient_kabupaten || null,
         recipient_provinsi || null,
@@ -971,7 +1348,9 @@ router.post('/shipments', async (req, res) => {
         actual_weight_kg: pricing.actual_weight_kg,
         volumetric_weight_kg: pricing.volumetric_weight_kg,
         chargeable_weight_kg: pricing.chargeable_weight_kg,
-        minimum_charge: minimumCharge,
+        minimum_charge: effectiveMinimumCharge,
+        zone_route_applied: zoneRouteApplied,
+        zone_route_id: zoneRoute ? zoneRoute.id : null,
         breakdown: pricing.breakdown,
       },
     });
@@ -1055,6 +1434,154 @@ router.get('/shipments/:id/events', async (req, res) => {
     return res.json({ success: true, data: rows });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to load shipment events', error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// ADMIN: Seed master wilayah (provinces / regencies / districts) from public
+// emsifa API. Safe to call multiple times (idempotent - skips if already
+// populated). Protected by X-Admin-Seed-Token header.
+// ---------------------------------------------------------------------------
+
+const WILAYAH_API = 'https://www.emsifa.com/api-wilayah-indonesia/api';
+const SEED_TOKEN = process.env.Admin_SEED_TOKEN || 'hantar-seed-wilayah-2026';
+
+async function fetchJson(url) {
+  const res = await axios.get(url, { timeout: 30000 });
+  return res.data;
+}
+
+async function addLatLonIfMissing(db) {
+  const alterSqls = [
+    `ALTER TABLE expedition_master_provinces ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
+    `ALTER TABLE expedition_master_provinces ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
+    `ALTER TABLE expedition_master_regencies ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
+    `ALTER TABLE expedition_master_regencies ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
+    `ALTER TABLE expedition_master_districts ADD COLUMN IF NOT EXISTS latitude DOUBLE NOT NULL DEFAULT 0 AFTER name`,
+    `ALTER TABLE expedition_master_districts ADD COLUMN IF NOT EXISTS longitude DOUBLE NOT NULL DEFAULT 0 AFTER latitude`,
+  ];
+  for (const sql of alterSqls) {
+    await db.query(sql).catch(() => {});
+  }
+}
+
+async function seedWilayahFromApi(db) {
+  await addLatLonIfMissing(db);
+
+  const [[{ cnt: provCount }]] = await db.query('SELECT COUNT(*) AS cnt FROM expedition_master_provinces');
+  if (provCount > 0) {
+    return { skipped: true, message: 'Tabel sudah terisi, seed dilewati', provinces: provCount };
+  }
+
+  const provinces = await fetchJson(`${WILAYAH_API}/provinces.json`);
+  let regencyTotal = 0;
+  let districtTotal = 0;
+  const CHUNK = 50;
+
+  // Insert provinces
+  for (let i = 0; i < provinces.length; i += CHUNK) {
+    const chunk = provinces.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '(?,?,0,0,1)').join(',');
+    const vals = [];
+    chunk.forEach((p) => { vals.push(String(p.id), String(p.name)); });
+    await db.query(
+      `INSERT INTO expedition_master_provinces (code, name, latitude, longitude, is_active) VALUES ${placeholders}
+       ON DUPLICATE KEY UPDATE name=VALUES(name)`,
+      vals
+    );
+  }
+
+  // Insert regencies per province and districts per regency
+  for (const prov of provinces) {
+    const regencies = await fetchJson(`${WILAYAH_API}/regencies/${prov.id}.json`);
+    regencyTotal += regencies.length;
+
+    for (let i = 0; i < regencies.length; i += CHUNK) {
+      const chunk = regencies.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '(?,?,?,0,0,1)').join(',');
+      const vals = [];
+      chunk.forEach((r) => { vals.push(String(r.id), String(prov.id), String(r.name)); });
+      await db.query(
+        `INSERT INTO expedition_master_regencies (code, province_code, name, latitude, longitude, is_active) VALUES ${placeholders}
+         ON DUPLICATE KEY UPDATE name=VALUES(name)`,
+        vals
+      );
+    }
+
+    for (const reg of regencies) {
+      const districts = await fetchJson(`${WILAYAH_API}/districts/${reg.id}.json`);
+      districtTotal += districts.length;
+
+      for (let i = 0; i < districts.length; i += CHUNK) {
+        const chunk = districts.slice(i, i + CHUNK);
+        const placeholders = chunk.map(() => '(?,?,?,0,0,1)').join(',');
+        const vals = [];
+        chunk.forEach((d) => { vals.push(String(d.id), String(reg.id), String(d.name)); });
+        await db.query(
+          `INSERT INTO expedition_master_districts (code, regency_code, name, latitude, longitude, is_active) VALUES ${placeholders}
+           ON DUPLICATE KEY UPDATE name=VALUES(name)`,
+          vals
+        );
+      }
+    }
+  }
+
+  return {
+    skipped: false,
+    provinces: provinces.length,
+    regencies: regencyTotal,
+    districts: districtTotal,
+  };
+}
+
+/**
+ * POST /api/expedition/admin/seed-wilayah
+ * Header: X-Admin-Seed-Token: <ADMIN_SEED_TOKEN>
+ */
+router.post('/admin/seed-wilayah', async (req, res) => {
+  const token = req.headers['x-admin-seed-token'];
+  if (!token || token !== SEED_TOKEN) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  try {
+    const db = req.db;
+    if (!db) return res.status(503).json({ success: false, message: 'Database unavailable' });
+
+    await ensureExpeditionTables(db);
+
+    res.json({ success: true, message: 'Seed dimulai, cek log server...', note: 'Proses memakan waktu 3-5 menit' });
+
+    // Run async after response sent to avoid timeout
+    seedWilayahFromApi(db)
+      .then((result) => console.log('[seed-wilayah] selesai:', JSON.stringify(result)))
+      .catch((err) => console.error('[seed-wilayah] error:', err.message));
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/expedition/admin/seed-wilayah/status
+ * Cek jumlah baris di tabel master wilayah.
+ */
+router.get('/admin/seed-wilayah/status', async (req, res) => {
+  const token = req.headers['x-admin-seed-token'];
+  if (!token || token !== SEED_TOKEN) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  try {
+    const db = req.db;
+    if (!db) return res.status(503).json({ success: false, message: 'Database unavailable' });
+
+    const [[{ provinces }]] = await db.query('SELECT COUNT(*) AS provinces FROM expedition_master_provinces');
+    const [[{ regencies }]] = await db.query('SELECT COUNT(*) AS regencies FROM expedition_master_regencies');
+    const [[{ districts }]] = await db.query('SELECT COUNT(*) AS districts FROM expedition_master_districts');
+
+    return res.json({ success: true, data: { provinces, regencies, districts } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
