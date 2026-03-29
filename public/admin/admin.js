@@ -54,6 +54,8 @@ function bindEvents() {
   document.getElementById('expStatusFilter').addEventListener('change', loadExpeditionShipments);
   document.getElementById('expSearchInput').addEventListener('input', debounce(loadExpeditionShipments, 400));
   document.getElementById('expReloadPricingBtn').addEventListener('click', loadExpeditionPricingSetup);
+  document.getElementById('expCheckWilayahSeedBtn').addEventListener('click', loadExpeditionWilayahSeedStatus);
+  document.getElementById('expTriggerWilayahSeedBtn').addEventListener('click', triggerExpeditionWilayahSeed);
   document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
   document.getElementById('expMinChargeForm').addEventListener('submit', saveExpeditionMinimumCharge);
 
@@ -1559,8 +1561,85 @@ async function loadExpeditionPricingSetup() {
 
     renderExpeditionPricingServices(expeditionPricingServices);
     renderExpeditionMinCharges(expeditionMinCharges);
+    await loadExpeditionWilayahSeedStatus();
   } catch (error) {
     showError(error.message);
+  }
+}
+
+function getExpeditionSeedToken() {
+  const saved = localStorage.getItem('exp_seed_token') || '';
+  const token = window.prompt('Masukkan X-Admin-Seed-Token untuk master wilayah:', saved || '');
+  if (!token) return null;
+  localStorage.setItem('exp_seed_token', token);
+  return token;
+}
+
+async function loadExpeditionWilayahSeedStatus() {
+  const countsEl = document.getElementById('expWilayahSeedCounts');
+  const hintEl = document.getElementById('expWilayahSeedHint');
+  if (!countsEl || !hintEl) return;
+
+  try {
+    const token = getExpeditionSeedToken();
+    if (!token) {
+      countsEl.textContent = 'token belum diisi';
+      hintEl.textContent = 'Isi token untuk melihat status master wilayah.';
+      return;
+    }
+
+    countsEl.textContent = 'memuat...';
+    const res = await fetch(`${API_BASE_URL}/api/expedition/admin/seed-wilayah/status`, {
+      headers: { 'x-admin-seed-token': token },
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal cek status wilayah');
+
+    const d = data.data || {};
+    countsEl.textContent = `provinsi ${formatNumber(d.provinces || 0)} | kab/kota ${formatNumber(d.regencies || 0)} | kecamatan ${formatNumber(d.districts || 0)}`;
+    hintEl.textContent = 'Status master wilayah terbaru berhasil dimuat.';
+  } catch (error) {
+    countsEl.textContent = 'gagal cek status';
+    hintEl.textContent = error.message || 'Terjadi kesalahan saat cek status.';
+  }
+}
+
+async function triggerExpeditionWilayahSeed() {
+  const token = getExpeditionSeedToken();
+  if (!token) return;
+
+  const btn = document.getElementById('expTriggerWilayahSeedBtn');
+  const hintEl = document.getElementById('expWilayahSeedHint');
+  const oldText = btn ? btn.textContent : '';
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Memproses...';
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/expedition/admin/seed-wilayah`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-seed-token': token,
+      },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal trigger sinkron wilayah');
+
+    showSuccess(data.message || 'Sinkronisasi master wilayah dimulai');
+    if (hintEl) hintEl.textContent = 'Sinkronisasi berjalan di server. Klik Cek Master Wilayah dalam 1-2 menit.';
+    await loadExpeditionWilayahSeedStatus();
+  } catch (error) {
+    showError(error.message);
+    if (hintEl) hintEl.textContent = error.message || 'Gagal trigger sinkron wilayah.';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || 'Sinkron Master Wilayah';
+    }
   }
 }
 
