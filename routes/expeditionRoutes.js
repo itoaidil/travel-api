@@ -3,7 +3,7 @@ const router = express.Router();
 
 const PILOT_CONFIG = {
   area: 'Kabupaten Tangerang',
-  distance_tier_km: 5,
+  bicycle_max_distance_km: 5,
   rates: {
     bicycle: {
       customer_price: 10000,
@@ -123,10 +123,10 @@ router.get('/quote', async (req, res) => {
       return res.status(400).json({ success: false, message: 'distance_km harus angka > 0' });
     }
 
-    if (distanceKm > PILOT_CONFIG.distance_tier_km) {
+    if (normalized === 'bicycle' && distanceKm > PILOT_CONFIG.bicycle_max_distance_km) {
       return res.status(400).json({
         success: false,
-        message: `Saat ini pilot hanya mendukung jarak <= ${PILOT_CONFIG.distance_tier_km} km`,
+        message: `Untuk sepeda, jarak maksimal ${PILOT_CONFIG.bicycle_max_distance_km} km`,
       });
     }
 
@@ -259,10 +259,10 @@ router.post('/shipments', async (req, res) => {
       return res.status(400).json({ success: false, message: 'distance_km harus angka > 0' });
     }
 
-    if (distanceKm > PILOT_CONFIG.distance_tier_km) {
+    if (normalizedVehicle === 'bicycle' && distanceKm > PILOT_CONFIG.bicycle_max_distance_km) {
       return res.status(400).json({
         success: false,
-        message: `Saat ini pilot hanya mendukung jarak <= ${PILOT_CONFIG.distance_tier_km} km`,
+        message: `Untuk sepeda, jarak maksimal ${PILOT_CONFIG.bicycle_max_distance_km} km`,
       });
     }
 
