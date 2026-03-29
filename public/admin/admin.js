@@ -28,6 +28,7 @@ function bindEvents() {
   document.getElementById('menuJobsBtn').addEventListener('click', () => switchView('jobs'));
   document.getElementById('menuApplicantsBtn').addEventListener('click', () => switchView('applicants'));
   document.getElementById('menuExpeditionBtn').addEventListener('click', () => switchView('expedition'));
+  document.getElementById('menuExpeditionPricingBtn').addEventListener('click', () => switchView('expedition_pricing'));
 
   document.getElementById('statusFilter').addEventListener('change', loadList);
   document.getElementById('searchInput').addEventListener('input', debounce(loadList, 400));
@@ -86,6 +87,11 @@ function switchView(view) {
     document.getElementById('moduleTitle').textContent = 'Ekspedisi Pilot Tangerang';
     loadExpeditionOffice();
     loadExpeditionShipments();
+    return;
+  }
+
+  if (view === 'expedition_pricing') {
+    document.getElementById('moduleTitle').textContent = 'Setup Tarif Ekspedisi';
     loadExpeditionPricingSetup();
     return;
   }
@@ -101,6 +107,7 @@ function setSidebarButtons(view) {
     jobs: document.getElementById('menuJobsBtn'),
     applicants: document.getElementById('menuApplicantsBtn'),
     expedition: document.getElementById('menuExpeditionBtn'),
+    expedition_pricing: document.getElementById('menuExpeditionPricingBtn'),
   };
 
   Object.values(buttonMap).forEach((btn) => btn && btn.classList.remove('active'));
@@ -115,9 +122,10 @@ function setViewVisibility(view) {
   const jobsSection = document.getElementById('jobsSection');
   const applicantsSection = document.getElementById('applicantsSection');
   const expeditionSection = document.getElementById('expeditionSection');
+  const expeditionPricingSection = document.getElementById('expeditionPricingSection');
 
   // Hide all first
-  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection].forEach(
+  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection, expeditionPricingSection].forEach(
     (el) => el.classList.add('section-hidden')
   );
 
@@ -130,6 +138,8 @@ function setViewVisibility(view) {
     applicantsSection.classList.remove('section-hidden');
   } else if (view === 'expedition') {
     expeditionSection.classList.remove('section-hidden');
+  } else if (view === 'expedition_pricing') {
+    expeditionPricingSection.classList.remove('section-hidden');
   } else {
     stats.classList.remove('section-hidden');
     controls.classList.remove('section-hidden');

@@ -411,6 +411,7 @@
                 <button class="menu-btn" id="menuJobsBtn"><i class="fas fa-briefcase me-2"></i>Data Lowongan</button>
                 <button class="menu-btn" id="menuApplicantsBtn"><i class="fas fa-users me-2"></i>Daftar Pelamar</button>
                 <button class="menu-btn" id="menuExpeditionBtn"><i class="fas fa-box me-2"></i>Ekspedisi Pilot</button>
+                <button class="menu-btn" id="menuExpeditionPricingBtn"><i class="fas fa-sliders-h me-2"></i>Setup Tarif Ekspedisi</button>
                 <div class="sidebar-note">
                     <i class="fas fa-circle-check me-1"></i> Semua data realtime dari API.
                 </div>
@@ -718,6 +719,49 @@
                         </div>
                     </div>
 
+                    <div class="card content-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">Daftar Shipment Ekspedisi</span>
+                            <div class="d-flex gap-2">
+                                <select class="form-select form-select-sm" id="expStatusFilter" style="width: 180px;">
+                                    <option value="all">Semua Status</option>
+                                    <option value="created">Created</option>
+                                    <option value="scheduled">Scheduled</option>
+                                    <option value="picked_up">Picked Up</option>
+                                    <option value="in_transit">In Transit</option>
+                                    <option value="delivered">Delivered</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="returned">Returned</option>
+                                </select>
+                                <input type="text" class="form-control form-control-sm" id="expSearchInput" placeholder="Cari resi/nama/no HP" style="width: 220px;">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="expRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover job-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Resi</th>
+                                            <th>Moda</th>
+                                            <th>Pengirim</th>
+                                            <th>Penerima</th>
+                                            <th>Jarak</th>
+                                            <th>Harga</th>
+                                            <th>Komisi</th>
+                                            <th>Status</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="expeditionTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="expeditionPricingSection" class="section-hidden">
                     <div class="card content-card mb-4">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span class="fw-semibold"><i class="fas fa-sliders-h me-2"></i>Setup Tarif Layanan Ekspedisi</span>
@@ -864,47 +908,6 @@
                                         </div>
                                     </form>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="card content-card">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span class="fw-semibold">Daftar Shipment Ekspedisi</span>
-                            <div class="d-flex gap-2">
-                                <select class="form-select form-select-sm" id="expStatusFilter" style="width: 180px;">
-                                    <option value="all">Semua Status</option>
-                                    <option value="created">Created</option>
-                                    <option value="scheduled">Scheduled</option>
-                                    <option value="picked_up">Picked Up</option>
-                                    <option value="in_transit">In Transit</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="failed">Failed</option>
-                                    <option value="returned">Returned</option>
-                                </select>
-                                <input type="text" class="form-control form-control-sm" id="expSearchInput" placeholder="Cari resi/nama/no HP" style="width: 220px;">
-                                <button type="button" class="btn btn-sm btn-outline-primary" id="expRefreshBtn">Refresh</button>
-                            </div>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover job-table mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>Resi</th>
-                                            <th>Moda</th>
-                                            <th>Pengirim</th>
-                                            <th>Penerima</th>
-                                            <th>Jarak</th>
-                                            <th>Harga</th>
-                                            <th>Komisi</th>
-                                            <th>Status</th>
-                                            <th>Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="expeditionTableBody"></tbody>
-                                </table>
                             </div>
                         </div>
                     </div>
