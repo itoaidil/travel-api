@@ -32,6 +32,7 @@ let expeditionPricingServices = [];
 let expeditionMinCharges = [];
 let dispatchDrivers = [];
 let dispatchSummaryRows = [];
+let dispatchSearchableReady = false;
 let senderCoords = null;
 let recipientCoords = null;
 let driverStatusChartInstance = null;
@@ -1325,9 +1326,53 @@ async function loadBatchDispatchPanel() {
       loadBatchDispatchSummary(),
     ]);
     await loadBatchDispatchPackages();
+    initDispatchSearchableCombos();
   } catch (error) {
     showError(error.message || 'Gagal load dispatch panel');
   }
+}
+
+function initDispatchSearchableCombos() {
+  if (typeof window.TomSelect === 'undefined') return;
+
+  const selectIds = [
+    'dispatchSourceDriver',
+    'dispatchTargetDriver',
+    'dispatchKawasanValue',
+    'dispatchKawasanTargetDriver',
+  ];
+
+  selectIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    if (el.tomselect) {
+      const currentValue = el.value;
+      el.tomselect.clearOptions();
+      Array.from(el.options).forEach((opt) => {
+        el.tomselect.addOption({ value: opt.value, text: opt.text });
+      });
+      el.tomselect.refreshOptions(false);
+      if (currentValue) el.tomselect.setValue(currentValue, true);
+      return;
+    }
+
+    new TomSelect(el, {
+      create: false,
+      persist: false,
+      maxItems: 1,
+      allowEmptyOption: true,
+      plugins: ['dropdown_input'],
+      dropdownParent: 'body',
+      placeholder: 'Ketik untuk mencari...',
+      onChange: function onChange(value) {
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    });
+  });
+
+  dispatchSearchableReady = true;
 }
 
 async function loadBatchDispatchDrivers() {
@@ -1351,6 +1396,8 @@ async function loadBatchDispatchDrivers() {
   sourceDriver.innerHTML = '<option value="">Pilih Driver Asal</option>' + opts;
   targetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
   kawasanTargetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
+
+  if (dispatchSearchableReady) initDispatchSearchableCombos();
 }
 
 async function loadBatchDispatchSummary() {
@@ -1392,6 +1439,8 @@ function fillDispatchKawasanFilter() {
   el.innerHTML = '<option value="">Semua Kawasan</option>'
     + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
   el.value = unique.includes(currentVal) ? currentVal : '';
+
+  if (dispatchSearchableReady) initDispatchSearchableCombos();
 }
 
 function fillDispatchKawasanOptions() {
@@ -1408,6 +1457,8 @@ function fillDispatchKawasanOptions() {
   kawasanEl.innerHTML = `<option value="">${label}</option>`
     + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
   kawasanEl.value = unique.includes(current) ? current : '';
+
+  if (dispatchSearchableReady) initDispatchSearchableCombos();
 }
 
 async function loadBatchDispatchPackages() {
