@@ -99,7 +99,10 @@ function bindEvents() {
   document.getElementById('dispatchReassignSelectedBtn').addEventListener('click', reassignSelectedPackages);
   document.getElementById('dispatchReassignKawasanBtn').addEventListener('click', reassignByKawasan);
   document.getElementById('dispatchSelectAll').addEventListener('change', toggleDispatchSelectAll);
-  document.getElementById('dispatchSourceDriver').addEventListener('change', fillDispatchKawasanOptions);
+  document.getElementById('dispatchSourceDriver').addEventListener('change', () => {
+    fillDispatchKawasanOptions();
+    loadBatchDispatchPackages();
+  });
 
   // Semua field penerima diisi manual oleh admin
 }
@@ -1372,6 +1375,12 @@ async function loadBatchDispatchSummary() {
     </tr>
   `).join('');
 
+  const sourceDriverEl = document.getElementById('dispatchSourceDriver');
+  if (sourceDriverEl && !sourceDriverEl.value) {
+    const firstDriverWithAssigned = dispatchSummaryRows[0]?.driver_id;
+    if (firstDriverWithAssigned) sourceDriverEl.value = String(firstDriverWithAssigned);
+  }
+
   fillDispatchKawasanFilter();
   fillDispatchKawasanOptions();
 }
@@ -1392,10 +1401,11 @@ function fillDispatchKawasanOptions() {
 
   const filtered = sourceDriverId
     ? dispatchSummaryRows.filter((r) => String(r.driver_id) === String(sourceDriverId))
-    : [];
+    : dispatchSummaryRows;
 
   const unique = [...new Set(filtered.map((x) => x.kawasan || '(tanpa kawasan)'))].sort();
-  kawasanEl.innerHTML = '<option value="">Pilih Kawasan</option>'
+  const label = sourceDriverId ? 'Pilih Kawasan' : 'Semua Kawasan (pilih driver untuk mempersempit)';
+  kawasanEl.innerHTML = `<option value="">${label}</option>`
     + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
   kawasanEl.value = unique.includes(current) ? current : '';
 }
