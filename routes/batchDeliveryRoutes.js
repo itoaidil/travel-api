@@ -259,6 +259,200 @@ router.post('/assign', async (req, res) => {
 });
 
 /**
+ * GET /api/batch-delivery/drivers
+ * List available drivers for dispatch/reassign UI.
+ */
+router.get('/drivers', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const [rows] = await db.query(
+      `SELECT id, full_name, phone, status
+       FROM independent_drivers
+       ORDER BY
+         CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+         full_name ASC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/assigned-summary
+ * Summary assignment grouped by driver and kawasan.
+ */
+router.get('/assigned-summary', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         bd.driver_id,
+         COALESCE(d.full_name, CONCAT('Driver #', bd.driver_id)) AS driver_name,
+         COALESCE(NULLIF(TRIM(bd.kawasan), ''), '(tanpa kawasan)') AS kawasan,
+         COUNT(*) AS total_packages
+       FROM batch_deliveries bd
+       LEFT JOIN independent_drivers d ON d.id = bd.driver_id
+       WHERE bd.status = 'assigned' AND bd.driver_id IS NOT NULL
+       GROUP BY bd.driver_id, COALESCE(NULLIF(TRIM(bd.kawasan), ''), '(tanpa kawasan)')
+       ORDER BY driver_name ASC, kawasan ASC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/assigned-list
+ * List assigned packages for dispatch operations.
+ * Query: driver_id (optional), kawasan (optional), limit (optional)
+ */
+router.get('/assigned-list', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { driver_id, kawasan, limit = 300 } = req.query;
+    const where = ["bd.status = 'assigned'"];
+    const params = [];
+
+    if (driver_id) {
+      where.push('bd.driver_id = ?');
+      params.push(parseInt(driver_id, 10));
+    }
+    if (kawasan) {
+      if (kawasan === '(tanpa kawasan)') {
+        where.push("(bd.kawasan IS NULL OR TRIM(bd.kawasan) = '')");
+      } else {
+        where.push('bd.kawasan = ?');
+        params.push(kawasan);
+      }
+    }
+
+    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+    const whereClause = `WHERE ${where.join(' AND ')}`;
+
+    const [rows] = await db.query(
+      `SELECT
+         bd.id,
+         bd.npp,
+         bd.batch_code,
+         bd.recipient_address,
+         bd.kawasan,
+         bd.driver_id,
+         COALESCE(d.full_name, CONCAT('Driver #', bd.driver_id)) AS driver_name,
+         bd.assigned_at,
+         bd.status
+       FROM batch_deliveries bd
+       LEFT JOIN independent_drivers d ON d.id = bd.driver_id
+       ${whereClause}
+       ORDER BY bd.assigned_at DESC, bd.id DESC
+       LIMIT ?`,
+      [...params, safeLimit]
+    );
+
+    res.json({ success: true, data: rows, limit: safeLimit });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/batch-delivery/reassign
+ * Reassign packages to another driver.
+ * Mode A (per package): { target_driver_id, package_ids: [1,2,3] }
+ * Mode B (per kawasan): { target_driver_id, source_driver_id, kawasan }
+ */
+router.post('/reassign', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const {
+      target_driver_id,
+      package_ids,
+      source_driver_id,
+      kawasan,
+    } = req.body || {};
+
+    const toDriver = parseInt(target_driver_id, 10);
+    if (!toDriver) {
+      return res.status(400).json({ success: false, message: 'target_driver_id wajib diisi' });
+    }
+
+    const [driverRows] = await db.query('SELECT id FROM independent_drivers WHERE id = ? LIMIT 1', [toDriver]);
+    if (!driverRows.length) {
+      return res.status(404).json({ success: false, message: 'Driver tujuan tidak ditemukan' });
+    }
+
+    let result;
+    let mode;
+
+    if (Array.isArray(package_ids) && package_ids.length > 0) {
+      const ids = package_ids
+        .map((x) => parseInt(x, 10))
+        .filter((x) => Number.isInteger(x) && x > 0);
+
+      if (!ids.length) {
+        return res.status(400).json({ success: false, message: 'package_ids tidak valid' });
+      }
+
+      const placeholders = ids.map(() => '?').join(',');
+      [result] = await db.query(
+        `UPDATE batch_deliveries
+         SET driver_id = ?, assigned_at = NOW()
+         WHERE status = 'assigned' AND id IN (${placeholders})`,
+        [toDriver, ...ids]
+      );
+      mode = 'package';
+    } else {
+      const fromDriver = parseInt(source_driver_id, 10);
+      if (!fromDriver || !kawasan) {
+        return res.status(400).json({
+          success: false,
+          message: 'Untuk mode kawasan, source_driver_id dan kawasan wajib diisi',
+        });
+      }
+
+      if (kawasan === '(tanpa kawasan)') {
+        [result] = await db.query(
+          `UPDATE batch_deliveries
+           SET driver_id = ?, assigned_at = NOW()
+           WHERE status = 'assigned' AND driver_id = ?
+             AND (kawasan IS NULL OR TRIM(kawasan) = '')`,
+          [toDriver, fromDriver]
+        );
+      } else {
+        [result] = await db.query(
+          `UPDATE batch_deliveries
+           SET driver_id = ?, assigned_at = NOW()
+           WHERE status = 'assigned' AND driver_id = ? AND kawasan = ?`,
+          [toDriver, fromDriver, kawasan]
+        );
+      }
+      mode = 'kawasan';
+    }
+
+    res.json({
+      success: true,
+      message: 'Reassign berhasil diproses',
+      data: {
+        mode,
+        moved: result.affectedRows || 0,
+        target_driver_id: toDriver,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /api/batch-delivery/driver/:driverId
  * List packages assigned to a specific driver.
  * Query: status (optional), page, limit

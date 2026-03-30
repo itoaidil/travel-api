@@ -30,6 +30,8 @@ let applicantsCache = [];
 let expeditionCache = [];
 let expeditionPricingServices = [];
 let expeditionMinCharges = [];
+let dispatchDrivers = [];
+let dispatchSummaryRows = [];
 let senderCoords = null;
 let recipientCoords = null;
 let driverStatusChartInstance = null;
@@ -61,6 +63,7 @@ function bindEvents() {
   document.getElementById('menuJobsBtn').addEventListener('click', () => switchView('jobs'));
   document.getElementById('menuApplicantsBtn').addEventListener('click', () => switchView('applicants'));
   document.getElementById('menuExpeditionBtn').addEventListener('click', () => switchView('expedition'));
+  document.getElementById('menuBatchDispatchBtn').addEventListener('click', () => switchView('batch_dispatch'));
   document.getElementById('menuExpeditionPricingBtn').addEventListener('click', () => switchView('expedition_pricing'));
 
   document.getElementById('statusFilter').addEventListener('change', loadList);
@@ -91,6 +94,12 @@ function bindEvents() {
   document.getElementById('expTriggerWilayahSeedBtn').addEventListener('click', triggerExpeditionWilayahSeed);
   document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
   document.getElementById('expMinChargeForm').addEventListener('submit', saveExpeditionMinimumCharge);
+  document.getElementById('dispatchRefreshBtn').addEventListener('click', loadBatchDispatchPanel);
+  document.getElementById('dispatchLoadPackagesBtn').addEventListener('click', loadBatchDispatchPackages);
+  document.getElementById('dispatchReassignSelectedBtn').addEventListener('click', reassignSelectedPackages);
+  document.getElementById('dispatchReassignKawasanBtn').addEventListener('click', reassignByKawasan);
+  document.getElementById('dispatchSelectAll').addEventListener('change', toggleDispatchSelectAll);
+  document.getElementById('dispatchSourceDriver').addEventListener('change', fillDispatchKawasanOptions);
 
   // Semua field penerima diisi manual oleh admin
 }
@@ -125,6 +134,12 @@ function switchView(view) {
     return;
   }
 
+  if (view === 'batch_dispatch') {
+    document.getElementById('moduleTitle').textContent = 'Dispatch Batch Delivery';
+    loadBatchDispatchPanel();
+    return;
+  }
+
   if (view === 'expedition_pricing') {
     document.getElementById('moduleTitle').textContent = 'Setup Tarif Ekspedisi';
     loadExpeditionPricingSetup();
@@ -142,6 +157,7 @@ function setSidebarButtons(view) {
     jobs: document.getElementById('menuJobsBtn'),
     applicants: document.getElementById('menuApplicantsBtn'),
     expedition: document.getElementById('menuExpeditionBtn'),
+    batch_dispatch: document.getElementById('menuBatchDispatchBtn'),
     expedition_pricing: document.getElementById('menuExpeditionPricingBtn'),
   };
 
@@ -157,10 +173,11 @@ function setViewVisibility(view) {
   const jobsSection = document.getElementById('jobsSection');
   const applicantsSection = document.getElementById('applicantsSection');
   const expeditionSection = document.getElementById('expeditionSection');
+  const batchDispatchSection = document.getElementById('batchDispatchSection');
   const expeditionPricingSection = document.getElementById('expeditionPricingSection');
 
   // Hide all first
-  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection, expeditionPricingSection].forEach(
+  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection, batchDispatchSection, expeditionPricingSection].forEach(
     (el) => el.classList.add('section-hidden')
   );
 
@@ -173,6 +190,8 @@ function setViewVisibility(view) {
     applicantsSection.classList.remove('section-hidden');
   } else if (view === 'expedition') {
     expeditionSection.classList.remove('section-hidden');
+  } else if (view === 'batch_dispatch') {
+    batchDispatchSection.classList.remove('section-hidden');
   } else if (view === 'expedition_pricing') {
     expeditionPricingSection.classList.remove('section-hidden');
   } else {
@@ -1289,6 +1308,220 @@ async function updateApplicantStatus(status) {
     renderApplicants(applicantsCache);
   } catch (error) {
     showError(error.message);
+  }
+}
+
+// =============================================
+// BATCH DISPATCH
+// =============================================
+
+async function loadBatchDispatchPanel() {
+  try {
+    await Promise.all([
+      loadBatchDispatchDrivers(),
+      loadBatchDispatchSummary(),
+    ]);
+    await loadBatchDispatchPackages();
+  } catch (error) {
+    showError(error.message || 'Gagal load dispatch panel');
+  }
+}
+
+async function loadBatchDispatchDrivers() {
+  const res = await fetch(`${API_BASE_URL}/api/batch-delivery/drivers`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Gagal load driver dispatch');
+
+  dispatchDrivers = data.data || [];
+
+  const filterDriver = document.getElementById('dispatchFilterDriver');
+  const targetDriver = document.getElementById('dispatchTargetDriver');
+  const sourceDriver = document.getElementById('dispatchSourceDriver');
+  const kawasanTargetDriver = document.getElementById('dispatchKawasanTargetDriver');
+
+  const baseOption = '<option value="">Semua Driver</option>';
+  const opts = dispatchDrivers.map((d) =>
+    `<option value="${d.id}">${escapeHtml(d.full_name || `Driver #${d.id}`)} (${escapeHtml(d.status || '-')})</option>`
+  ).join('');
+
+  filterDriver.innerHTML = baseOption + opts;
+  sourceDriver.innerHTML = '<option value="">Pilih Driver Asal</option>' + opts;
+  targetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
+  kawasanTargetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
+}
+
+async function loadBatchDispatchSummary() {
+  const tbody = document.getElementById('dispatchSummaryBody');
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Memuat summary...</td></tr>';
+
+  const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-summary`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Gagal load summary dispatch');
+
+  dispatchSummaryRows = data.data || [];
+  if (!dispatchSummaryRows.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Tidak ada paket assigned</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = dispatchSummaryRows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.driver_name || `Driver #${r.driver_id}`)}</td>
+      <td>${escapeHtml(r.kawasan || '(tanpa kawasan)')}</td>
+      <td>${formatNumber(r.total_packages || 0)}</td>
+    </tr>
+  `).join('');
+
+  fillDispatchKawasanFilter();
+  fillDispatchKawasanOptions();
+}
+
+function fillDispatchKawasanFilter() {
+  const el = document.getElementById('dispatchFilterKawasan');
+  const currentVal = el.value;
+  const unique = [...new Set(dispatchSummaryRows.map((x) => x.kawasan || '(tanpa kawasan)'))].sort();
+  el.innerHTML = '<option value="">Semua Kawasan</option>'
+    + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  el.value = unique.includes(currentVal) ? currentVal : '';
+}
+
+function fillDispatchKawasanOptions() {
+  const sourceDriverId = document.getElementById('dispatchSourceDriver').value;
+  const kawasanEl = document.getElementById('dispatchKawasanValue');
+  const current = kawasanEl.value;
+
+  const filtered = sourceDriverId
+    ? dispatchSummaryRows.filter((r) => String(r.driver_id) === String(sourceDriverId))
+    : [];
+
+  const unique = [...new Set(filtered.map((x) => x.kawasan || '(tanpa kawasan)'))].sort();
+  kawasanEl.innerHTML = '<option value="">Pilih Kawasan</option>'
+    + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  kawasanEl.value = unique.includes(current) ? current : '';
+}
+
+async function loadBatchDispatchPackages() {
+  const tbody = document.getElementById('dispatchPackagesBody');
+  const hintEl = document.getElementById('dispatchHint');
+  const driverId = document.getElementById('dispatchFilterDriver').value;
+  const kawasan = document.getElementById('dispatchFilterKawasan').value;
+
+  try {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Memuat paket...</td></tr>';
+
+    const params = new URLSearchParams();
+    params.set('limit', '500');
+    if (driverId) params.set('driver_id', driverId);
+    if (kawasan) params.set('kawasan', kawasan);
+
+    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-list?${params.toString()}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal load paket assigned');
+
+    const rows = data.data || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Tidak ada paket sesuai filter</td></tr>';
+      hintEl.textContent = 'Belum ada data assigned untuk filter tersebut.';
+      return;
+    }
+
+    tbody.innerHTML = rows.map((r) => `
+      <tr>
+        <td><input type="checkbox" class="dispatch-item-check" value="${r.id}"></td>
+        <td>${r.id}</td>
+        <td>${escapeHtml(r.npp || '-')}</td>
+        <td>${escapeHtml(r.kawasan || '(tanpa kawasan)')}</td>
+        <td>${escapeHtml(r.driver_name || `Driver #${r.driver_id}`)}</td>
+      </tr>
+    `).join('');
+
+    const all = document.getElementById('dispatchSelectAll');
+    if (all) all.checked = false;
+    hintEl.textContent = `Total ${formatNumber(rows.length)} paket assigned dimuat. Pilih paket atau gunakan mode per kawasan.`;
+  } catch (error) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-2">Gagal memuat paket</td></tr>';
+    hintEl.textContent = error.message || 'Gagal memuat paket assigned.';
+  }
+}
+
+function toggleDispatchSelectAll() {
+  const checked = document.getElementById('dispatchSelectAll').checked;
+  document.querySelectorAll('.dispatch-item-check').forEach((el) => {
+    el.checked = checked;
+  });
+}
+
+function getSelectedDispatchPackageIds() {
+  return Array.from(document.querySelectorAll('.dispatch-item-check:checked'))
+    .map((el) => parseInt(el.value, 10))
+    .filter((x) => Number.isInteger(x) && x > 0);
+}
+
+async function reassignSelectedPackages() {
+  try {
+    const targetDriverId = parseInt(document.getElementById('dispatchTargetDriver').value, 10);
+    const packageIds = getSelectedDispatchPackageIds();
+
+    if (!targetDriverId) {
+      showError('Pilih driver tujuan terlebih dahulu');
+      return;
+    }
+    if (!packageIds.length) {
+      showError('Pilih minimal 1 paket yang ingin dipindahkan');
+      return;
+    }
+    if (!confirm(`Pindahkan ${packageIds.length} paket ke driver tujuan?`)) return;
+
+    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/reassign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_driver_id: targetDriverId,
+        package_ids: packageIds,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal reassign per paket');
+
+    showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket`);
+    await loadBatchDispatchPanel();
+  } catch (error) {
+    showError(error.message || 'Gagal reassign paket');
+  }
+}
+
+async function reassignByKawasan() {
+  try {
+    const sourceDriverId = parseInt(document.getElementById('dispatchSourceDriver').value, 10);
+    const kawasan = document.getElementById('dispatchKawasanValue').value;
+    const targetDriverId = parseInt(document.getElementById('dispatchKawasanTargetDriver').value, 10);
+
+    if (!sourceDriverId || !kawasan || !targetDriverId) {
+      showError('Lengkapi driver asal, kawasan, dan driver tujuan');
+      return;
+    }
+    if (sourceDriverId === targetDriverId) {
+      showError('Driver asal dan tujuan tidak boleh sama');
+      return;
+    }
+    if (!confirm(`Pindahkan semua paket assigned di kawasan "${kawasan}" ke driver tujuan?`)) return;
+
+    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/reassign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_driver_id: targetDriverId,
+        source_driver_id: sourceDriverId,
+        kawasan,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal reassign per kawasan');
+
+    showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket untuk kawasan ${kawasan}`);
+    await loadBatchDispatchPanel();
+  } catch (error) {
+    showError(error.message || 'Gagal reassign kawasan');
   }
 }
 
