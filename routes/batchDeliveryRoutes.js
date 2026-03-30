@@ -645,6 +645,112 @@ router.patch('/:id/photo', async (req, res) => {
 });
 
 /**
+ * PATCH /api/batch-delivery/:id/complete-delivery
+ * Atomic endpoint: save proof photo and mark package as delivered in one transaction.
+ * Body: { photo_url, driver_notes?, driver_lat?, driver_lng? }
+ */
+router.patch('/:id/complete-delivery', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  const { photo_url, driver_notes, driver_lat, driver_lng } = req.body || {};
+  if (!photo_url) {
+    return res.status(400).json({ success: false, message: 'photo_url is required' });
+  }
+
+  let conn = db;
+  let shouldRelease = false;
+
+  try {
+    if (typeof db.getConnection === 'function') {
+      conn = await db.getConnection();
+      shouldRelease = true;
+    }
+
+    if (typeof conn.beginTransaction === 'function') {
+      await conn.beginTransaction();
+    }
+
+    const [[pkg]] = await conn.query(
+      `SELECT id, driver_id, status, npp, penerima
+       FROM batch_deliveries
+       WHERE id = ?
+       FOR UPDATE`,
+      [req.params.id]
+    );
+
+    if (!pkg) {
+      if (typeof conn.rollback === 'function') await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Package not found' });
+    }
+
+    await conn.query(
+      `UPDATE batch_deliveries
+       SET delivery_photo_url = ?,
+           status = 'delivered',
+           driver_notes = ?,
+           delivered_at = NOW(),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [photo_url, driver_notes || null, req.params.id]
+    );
+
+    if (typeof conn.commit === 'function') {
+      await conn.commit();
+    }
+
+    const lat = parseFloat(driver_lat);
+    const lng = parseFloat(driver_lng);
+    const hasGps = !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+
+    if (pkg.driver_id && hasGps) {
+      geocodeDriverPackages(conn, pkg.driver_id)
+        .then((count) => {
+          if (count > 0) {
+            console.log(`[batch-geocode] driver ${pkg.driver_id}: geocoded ${count} new addresses`);
+          }
+        })
+        .catch((err) => console.error('[batch-geocode] error:', err.message));
+
+      const nextStop = await findNextNearest(conn, pkg.driver_id, lat, lng);
+      const [[remaining]] = await conn.query(
+        `SELECT COUNT(*) as total,
+                SUM(lat != 0 AND lng != 0) as with_coords,
+                SUM(lat = 0 OR lng = 0) as no_coords
+         FROM batch_deliveries
+         WHERE driver_id = ? AND status IN ('assigned', 'in_progress')`,
+        [pkg.driver_id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Delivery completed',
+        next_stop: nextStop,
+        remaining: {
+          total: Number(remaining.total),
+          with_coords: Number(remaining.with_coords),
+          geocoding_pending: Number(remaining.no_coords),
+        },
+      });
+    }
+
+    res.json({ success: true, message: 'Delivery completed' });
+  } catch (error) {
+    if (typeof conn.rollback === 'function') {
+      try {
+        await conn.rollback();
+      } catch (_) {}
+    }
+    console.error('PATCH complete-delivery error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    if (shouldRelease && typeof conn.release === 'function') {
+      conn.release();
+    }
+  }
+});
+
+/**
  * GET /api/batch-delivery/stats
  * Summary: total, per status, koordinat valid vs 0,0
  */
