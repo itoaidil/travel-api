@@ -1347,13 +1347,17 @@ function initDispatchSearchableCombos() {
     if (!el) return;
 
     if (el.tomselect) {
-      const currentValue = el.value;
+      const currentValue = String(el.tomselect.getValue() || el.value || '');
       el.tomselect.clearOptions();
       Array.from(el.options).forEach((opt) => {
         el.tomselect.addOption({ value: opt.value, text: opt.text });
       });
       el.tomselect.refreshOptions(false);
-      if (currentValue) el.tomselect.setValue(currentValue, true);
+      if (currentValue && Array.from(el.options).some((opt) => opt.value === currentValue)) {
+        el.tomselect.setValue(currentValue, true);
+      } else {
+        el.tomselect.clear(true);
+      }
       return;
     }
 
@@ -1373,6 +1377,13 @@ function initDispatchSearchableCombos() {
   });
 
   dispatchSearchableReady = true;
+}
+
+function getDispatchSelectValue(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  if (el.tomselect) return String(el.tomselect.getValue() || '').trim();
+  return String(el.value || '').trim();
 }
 
 async function loadBatchDispatchDrivers() {
@@ -1434,7 +1445,7 @@ async function loadBatchDispatchSummary() {
 
 function fillDispatchKawasanFilter() {
   const el = document.getElementById('dispatchFilterKawasan');
-  const currentVal = el.value;
+  const currentVal = getDispatchSelectValue('dispatchFilterKawasan');
   const unique = [...new Set(dispatchSummaryRows.map((x) => x.kawasan || '(tanpa kawasan)'))].sort();
   el.innerHTML = '<option value="">Semua Kawasan</option>'
     + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
@@ -1444,9 +1455,9 @@ function fillDispatchKawasanFilter() {
 }
 
 function fillDispatchKawasanOptions() {
-  const sourceDriverId = document.getElementById('dispatchSourceDriver').value;
+  const sourceDriverId = getDispatchSelectValue('dispatchSourceDriver');
   const kawasanEl = document.getElementById('dispatchKawasanValue');
-  const current = kawasanEl.value;
+  const current = getDispatchSelectValue('dispatchKawasanValue');
 
   const filtered = sourceDriverId
     ? dispatchSummaryRows.filter((r) => String(r.driver_id) === String(sourceDriverId))
@@ -1464,8 +1475,8 @@ function fillDispatchKawasanOptions() {
 async function loadBatchDispatchPackages() {
   const tbody = document.getElementById('dispatchPackagesBody');
   const hintEl = document.getElementById('dispatchHint');
-  const driverId = document.getElementById('dispatchFilterDriver').value;
-  const kawasan = document.getElementById('dispatchFilterKawasan').value;
+  const driverId = getDispatchSelectValue('dispatchFilterDriver');
+  const kawasan = getDispatchSelectValue('dispatchFilterKawasan');
 
   try {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Memuat paket...</td></tr>';
@@ -1520,7 +1531,7 @@ function getSelectedDispatchPackageIds() {
 
 async function reassignSelectedPackages() {
   try {
-    const targetDriverId = parseInt(document.getElementById('dispatchTargetDriver').value, 10);
+    const targetDriverId = parseInt(getDispatchSelectValue('dispatchTargetDriver'), 10);
     const packageIds = getSelectedDispatchPackageIds();
 
     if (!targetDriverId) {
@@ -1553,9 +1564,9 @@ async function reassignSelectedPackages() {
 
 async function reassignByKawasan() {
   try {
-    const sourceDriverId = parseInt(document.getElementById('dispatchSourceDriver').value, 10);
-    const kawasan = document.getElementById('dispatchKawasanValue').value;
-    const targetDriverId = parseInt(document.getElementById('dispatchKawasanTargetDriver').value, 10);
+    const sourceDriverId = parseInt(getDispatchSelectValue('dispatchSourceDriver'), 10);
+    const kawasan = getDispatchSelectValue('dispatchKawasanValue');
+    const targetDriverId = parseInt(getDispatchSelectValue('dispatchKawasanTargetDriver'), 10);
 
     if (!sourceDriverId || !kawasan || !targetDriverId) {
       showError('Lengkapi driver asal, kawasan, dan driver tujuan');
