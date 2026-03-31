@@ -122,6 +122,71 @@ const _DEFAULT_SERVICE_TIERS = [
   },
 ];
 
+function normalizeVehicleType(vehicleType) {
+  const value = String(vehicleType || '').toLowerCase();
+  if (value === 'motor') return 'motorcycle';
+  if (value === 'sepeda') return 'bike';
+  return value;
+}
+
+async function resolveFareFromPricingTable(dbConn, serviceCode, vehicleType, distanceKm) {
+  const service = String(serviceCode || '').toLowerCase();
+  const serviceAlt = service === 'antar_paket' ? 'delivery' : service;
+  const vehicleRaw = String(vehicleType || '').toLowerCase();
+  const vehicle = normalizeVehicleType(vehicleRaw);
+
+  const [exactRows] = await dbConn.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND service_code IN (?, ?)
+       AND vehicle_type IN (?, ?)
+     ORDER BY (service_code = ?) DESC, (vehicle_type = ?) DESC
+     LIMIT 1`,
+    [service, serviceAlt, vehicleRaw, vehicle, service, vehicle]
+  );
+  if (exactRows.length > 0 && exactRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(exactRows[0].base_fare || 0) +
+        distanceKm * parseFloat(exactRows[0].per_km_rate || 0)
+    );
+  }
+
+  const [serviceRows] = await dbConn.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND service_code IN (?, ?)
+     ORDER BY (service_code = ?) DESC
+     LIMIT 1`,
+    [service, serviceAlt, service]
+  );
+  if (serviceRows.length > 0 && serviceRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(serviceRows[0].base_fare || 0) +
+        distanceKm * parseFloat(serviceRows[0].per_km_rate || 0)
+    );
+  }
+
+  const [vehicleRows] = await dbConn.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND vehicle_type IN (?, ?)
+     ORDER BY (vehicle_type = ?) DESC
+     LIMIT 1`,
+    [vehicleRaw, vehicle, vehicle]
+  );
+  if (vehicleRows.length > 0 && vehicleRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(vehicleRows[0].base_fare || 0) +
+        distanceKm * parseFloat(vehicleRows[0].per_km_rate || 0)
+    );
+  }
+
+  return null;
+}
+
 async function getActiveServiceTiers(dbConn) {
   try {
     const [rows] = await dbConn.query(
@@ -156,17 +221,13 @@ async function resolveNormalFare(dbConn, clientFare, vehicleType, bookingType, d
   // Client sent 0 — promo was likely applied before submission. Calculate server-side.
   const serviceCode = bookingType === 'cargo' ? 'cargo' : bookingType === 'ride' ? 'ride' : 'delivery';
   try {
-    const [rows] = await dbConn.query(
-      `SELECT base_fare, per_km_rate FROM service_vehicle_pricing
-       WHERE (service_code = ? OR vehicle_type = ?) AND is_active = 1
-       LIMIT 1`,
-      [serviceCode, vehicleType]
+    const resolvedFare = await resolveFareFromPricingTable(
+      dbConn,
+      serviceCode,
+      vehicleType,
+      distanceKm
     );
-    if (rows.length > 0 && rows[0].base_fare != null) {
-      return Math.round(
-        parseFloat(rows[0].base_fare) + distanceKm * parseFloat(rows[0].per_km_rate || 3000)
-      );
-    }
+    if (resolvedFare != null) return resolvedFare;
   } catch (_) {
     // Pricing table unavailable — use hardcoded default
   }

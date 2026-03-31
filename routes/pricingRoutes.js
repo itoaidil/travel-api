@@ -34,6 +34,74 @@ const DEFAULT_SERVICE_TIERS = [
   },
 ];
 
+function normalizeVehicleType(vehicleType) {
+  const value = String(vehicleType || '').toLowerCase();
+  if (value === 'motor') return 'motorcycle';
+  if (value === 'sepeda') return 'bike';
+  return value;
+}
+
+async function resolveBaseFareFromPricingTable(db, serviceCode, vehicleType, distanceKm) {
+  const service = String(serviceCode || '').toLowerCase();
+  const serviceAlt = service === 'antar_paket' ? 'delivery' : service;
+  const vehicleRaw = String(vehicleType || '').toLowerCase();
+  const vehicle = normalizeVehicleType(vehicleRaw);
+
+  // Priority 1: exact service + exact/normalized vehicle
+  const [exactRows] = await db.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND service_code IN (?, ?)
+       AND vehicle_type IN (?, ?)
+     ORDER BY (service_code = ?) DESC, (vehicle_type = ?) DESC
+     LIMIT 1`,
+    [service, serviceAlt, vehicleRaw, vehicle, service, vehicle]
+  );
+  if (exactRows.length > 0 && exactRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(exactRows[0].base_fare || 0) +
+        distanceKm * parseFloat(exactRows[0].per_km_rate || 0)
+    );
+  }
+
+  // Priority 2: service only
+  const [serviceRows] = await db.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND service_code IN (?, ?)
+     ORDER BY (service_code = ?) DESC
+     LIMIT 1`,
+    [service, serviceAlt, service]
+  );
+  if (serviceRows.length > 0 && serviceRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(serviceRows[0].base_fare || 0) +
+        distanceKm * parseFloat(serviceRows[0].per_km_rate || 0)
+    );
+  }
+
+  // Priority 3: vehicle only
+  const [vehicleRows] = await db.query(
+    `SELECT base_fare, per_km_rate
+     FROM service_vehicle_pricing
+     WHERE is_active = 1
+       AND vehicle_type IN (?, ?)
+     ORDER BY (vehicle_type = ?) DESC
+     LIMIT 1`,
+    [vehicleRaw, vehicle, vehicle]
+  );
+  if (vehicleRows.length > 0 && vehicleRows[0].base_fare != null) {
+    return Math.round(
+      parseFloat(vehicleRows[0].base_fare || 0) +
+        distanceKm * parseFloat(vehicleRows[0].per_km_rate || 0)
+    );
+  }
+
+  return null;
+}
+
 async function getActiveServiceTiers(db) {
   if (!db) return DEFAULT_SERVICE_TIERS;
   try {
@@ -102,19 +170,13 @@ router.get('/calculate', async (req, res) => {
   // Try to get fare from DB pricing table if available
   if (db) {
     try {
-      const [rows] = await db.query(
-        `SELECT base_fare, per_km_rate
-         FROM service_vehicle_pricing
-         WHERE (service_code = ? OR vehicle_type = ?)
-           AND is_active = 1
-         LIMIT 1`,
-        [serviceCode, vehicleType]
+      const resolvedFare = await resolveBaseFareFromPricingTable(
+        db,
+        pricingKey,
+        vehicleType,
+        distanceKm
       );
-      if (rows.length > 0 && rows[0].base_fare != null) {
-        normalFare = Math.round(
-          parseFloat(rows[0].base_fare) + distanceKm * parseFloat(rows[0].per_km_rate || 3000)
-        );
-      }
+      if (resolvedFare != null) normalFare = resolvedFare;
     } catch (_) {
       // Pricing table may not exist yet — use default
     }
