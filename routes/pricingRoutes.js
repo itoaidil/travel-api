@@ -5,8 +5,8 @@ const router = express.Router();
 const DEFAULT_PRICING = {
   instant_ride:  { base_fare: 5000, per_km: 3000 },
   ride:          { base_fare: 5000, per_km: 3000 },
-  antar_paket:   { base_fare: 5000, per_km: 3000 },
-  delivery:      { base_fare: 5000, per_km: 3000 },
+  antar_paket:   { base_fare: 0, per_km: 1800 },
+  delivery:      { base_fare: 0, per_km: 1800 },
   cargo:         { base_fare: 10000, per_km: 4000 },
 };
 

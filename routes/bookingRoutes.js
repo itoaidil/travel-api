@@ -97,7 +97,7 @@ function toPositiveNumber(value, fallback = 0) {
 // Default pricing — mirrors pricingRoutes.js defaults
 const _DEFAULT_PRICING = {
   ride:     { base_fare: 5000, per_km: 3000 },
-  delivery: { base_fare: 5000, per_km: 3000 },
+  delivery: { base_fare: 0, per_km: 1800 },
   cargo:    { base_fare: 10000, per_km: 4000 },
 };
 
