@@ -101,6 +101,47 @@ const _DEFAULT_PRICING = {
   cargo:    { base_fare: 10000, per_km: 4000 },
 };
 
+const _DEFAULT_SERVICE_TIERS = [
+  {
+    code: 'ngebut',
+    label: 'Ngebut',
+    multiplier: 1.4,
+    sort_order: 1,
+  },
+  {
+    code: 'normal',
+    label: 'Normal',
+    multiplier: 1.0,
+    sort_order: 2,
+  },
+  {
+    code: 'bareng',
+    label: 'Bareng',
+    multiplier: 0.8,
+    sort_order: 3,
+  },
+];
+
+async function getActiveServiceTiers(dbConn) {
+  try {
+    const [rows] = await dbConn.query(
+      `SELECT code, label, multiplier, sort_order
+       FROM service_tiers
+       WHERE is_active = 1
+       ORDER BY sort_order ASC, id ASC`
+    );
+    if (!rows || rows.length === 0) return _DEFAULT_SERVICE_TIERS;
+    return rows.map((row) => ({
+      code: String(row.code || '').toLowerCase(),
+      label: row.label || row.code,
+      multiplier: parseFloat(row.multiplier || 1),
+      sort_order: Number(row.sort_order || 0),
+    }));
+  } catch (_) {
+    return _DEFAULT_SERVICE_TIERS;
+  }
+}
+
 /**
  * Resolve the pre-discount normal fare for driver payout.
  * If the client sends a positive total_fare, use it directly (it may already be
@@ -228,6 +269,7 @@ router.post('/delivery/create', async (req, res) => {
       dropoff_lng,
       distance_km,
       total_fare,
+      service_tier,
       item_size,
       item_type,
       item_photo_url,
@@ -331,19 +373,29 @@ router.post('/delivery/create', async (req, res) => {
     // server-side so driver's payout base is always the real pre-discount fare.
     const normalFare = await resolveNormalFare(db, total_fare, vehicle_type, actualBookingType, distanceKmValue);
 
+    const activeTiers = await getActiveServiceTiers(db);
+    const requestedTierCode = String(service_tier || 'normal').toLowerCase();
+    const selectedTier =
+      activeTiers.find((tier) => tier.code === requestedTierCode) ||
+      activeTiers.find((tier) => tier.code === 'normal') ||
+      activeTiers[0] ||
+      { code: 'normal', label: 'Normal', multiplier: 1.0 };
+
+    const tierOriginalFare = Math.max(0, Math.round(normalFare * (selectedTier.multiplier || 1)));
+
     let appliedPromo = null;
     let discountAmount = 0;
-    let finalFare = normalFare;
+    let finalFare = tierOriginalFare;
 
     if (['delivery', 'ride', 'cargo'].includes(actualBookingType)) {
       appliedPromo = await findActiveDeliveryPromo(db, distanceKmValue, actualBookingType);
       if (appliedPromo) {
-        discountAmount = normalFare;
+        discountAmount = tierOriginalFare;
         finalFare = 0;
       }
     }
 
-    console.log(`💵 Fare resolved: normalFare=${normalFare}, finalFare=${finalFare} (clientSent=${total_fare}), bookingType=${actualBookingType}`);
+    console.log(`💵 Fare resolved: normalFare=${normalFare}, tier=${selectedTier.code}, tierOriginalFare=${tierOriginalFare}, finalFare=${finalFare} (clientSent=${total_fare}), bookingType=${actualBookingType}`);
 
     // Insert booking into independent_bookings table
     const insertQuery = `
@@ -434,16 +486,54 @@ router.post('/delivery/create', async (req, res) => {
       customerId: customer_id,
       serviceType: actualBookingType,
       distanceKm: distanceKmValue,
-      normalFare,
+      normalFare: tierOriginalFare,
       finalFare,
       discountAmount,
     });
+
+    // Save tier snapshot if migration 025 columns are available.
+    try {
+      await db.query(
+        `UPDATE independent_bookings
+         SET service_tier = ?,
+             tier_multiplier = ?,
+             normal_fare_before_tier = ?,
+             final_fare_after_tier = ?,
+             pricing_meta_json = JSON_OBJECT(
+               'requested_tier', ?,
+               'selected_tier', ?,
+               'tier_label', ?,
+               'tier_original_fare', ?,
+               'promo_applied', ?,
+               'promo_code', ?,
+               'promo_name', ?
+             )
+         WHERE id = ?`,
+        [
+          selectedTier.code,
+          selectedTier.multiplier || 1,
+          normalFare,
+          finalFare,
+          requestedTierCode,
+          selectedTier.code,
+          selectedTier.label,
+          tierOriginalFare,
+          appliedPromo ? 1 : 0,
+          appliedPromo ? appliedPromo.promo_code : null,
+          appliedPromo ? appliedPromo.promo_name : null,
+          bookingId,
+        ]
+      );
+    } catch (snapshotErr) {
+      console.warn('⚠️ Tier snapshot columns not ready yet:', snapshotErr.message);
+    }
 
     console.log('✅ Delivery booking created:', {
       booking_id: bookingId,
       booking_code: bookingCode,
       payment_status: paymentStatus,
-      promo_applied: Boolean(appliedPromo)
+      promo_applied: Boolean(appliedPromo),
+      service_tier: selectedTier.code,
     });
 
     // Lookup franchise partner by pickup_address matching kabupaten coverage area
@@ -604,8 +694,11 @@ router.post('/delivery/create', async (req, res) => {
         dropoff_address,
         distance_km: distanceKmValue,
         total_fare: normalFare,
+        original_tier_price: tierOriginalFare,
         discount_amount: discountAmount,
         final_fare: finalFare,
+        service_tier: selectedTier.code,
+        tier_multiplier: selectedTier.multiplier || 1,
         promo_applied: Boolean(appliedPromo),
         promo_code: appliedPromo ? appliedPromo.promo_code : null,
         promo_name: appliedPromo ? appliedPromo.promo_name : null,

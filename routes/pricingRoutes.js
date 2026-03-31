@@ -10,6 +10,52 @@ const DEFAULT_PRICING = {
   cargo:         { base_fare: 10000, per_km: 4000 },
 };
 
+const DEFAULT_SERVICE_TIERS = [
+  {
+    code: 'ngebut',
+    label: 'Ngebut',
+    description: 'Driver khusus, lebih cepat sampai',
+    multiplier: 1.4,
+    sort_order: 1,
+  },
+  {
+    code: 'normal',
+    label: 'Normal',
+    description: 'Pengiriman standar',
+    multiplier: 1.0,
+    sort_order: 2,
+  },
+  {
+    code: 'bareng',
+    label: 'Bareng',
+    description: 'Hemat biaya, waktu tunggu sedikit lebih lama',
+    multiplier: 0.8,
+    sort_order: 3,
+  },
+];
+
+async function getActiveServiceTiers(db) {
+  if (!db) return DEFAULT_SERVICE_TIERS;
+  try {
+    const [rows] = await db.query(
+      `SELECT code, label, description, multiplier, sort_order
+       FROM service_tiers
+       WHERE is_active = 1
+       ORDER BY sort_order ASC, id ASC`
+    );
+    if (!rows || rows.length === 0) return DEFAULT_SERVICE_TIERS;
+    return rows.map((row) => ({
+      code: String(row.code || '').toLowerCase(),
+      label: row.label || row.code,
+      description: row.description || null,
+      multiplier: parseFloat(row.multiplier || 1),
+      sort_order: Number(row.sort_order || 0),
+    }));
+  } catch (_) {
+    return DEFAULT_SERVICE_TIERS;
+  }
+}
+
 // Map Flutter serviceCode → promo service_type in promo_rules table
 const SERVICE_CODE_TO_PROMO_TYPE = {
   instant_ride: 'ride',
@@ -36,7 +82,12 @@ const SERVICE_CODE_TO_PROMO_TYPE = {
  */
 router.get('/calculate', async (req, res) => {
   const db = req.db;
-  const { serviceCode = 'instant_ride', vehicleType = 'motorcycle', distance } = req.query;
+  const {
+    serviceCode = 'instant_ride',
+    vehicleType = 'motorcycle',
+    serviceTier = 'normal',
+    distance,
+  } = req.query;
 
   const distanceKm = parseFloat(distance) || 0;
   if (distanceKm <= 0) {
@@ -70,7 +121,7 @@ router.get('/calculate', async (req, res) => {
   }
 
   // Check active promo
-  let finalFare = normalFare;
+  let promoBaseFare = normalFare;
   let promoApplied = false;
   let promoCode = null;
   let promoName = null;
@@ -80,7 +131,7 @@ router.get('/calculate', async (req, res) => {
   if (db && promoServiceType) {
     try {
       const [promoRows] = await db.query(
-        `SELECT id, promo_code, promo_name, promo_type, max_distance_km
+        `SELECT id, promo_code, promo_name, promo_type, promo_value, max_distance_km
          FROM promo_rules
          WHERE is_active = 1
            AND service_type = ?
@@ -95,11 +146,11 @@ router.get('/calculate', async (req, res) => {
       if (promoRows.length > 0) {
         const promo = promoRows[0];
         if (promo.promo_type === 'free_fare') {
-          finalFare = 0;
+          promoBaseFare = 0;
         } else if (promo.promo_type === 'fixed') {
-          finalFare = Math.max(0, normalFare - parseFloat(promo.promo_value || 0));
+          promoBaseFare = Math.max(0, normalFare - parseFloat(promo.promo_value || 0));
         } else if (promo.promo_type === 'percentage') {
-          finalFare = Math.round(normalFare * (1 - parseFloat(promo.promo_value || 0) / 100));
+          promoBaseFare = Math.round(normalFare * (1 - parseFloat(promo.promo_value || 0) / 100));
         }
         promoApplied = true;
         promoCode = promo.promo_code;
@@ -110,17 +161,50 @@ router.get('/calculate', async (req, res) => {
     }
   }
 
+  const activeTiers = await getActiveServiceTiers(db);
+  const tiers = activeTiers.map((tier) => {
+    const originalPrice = Math.max(0, Math.round(normalFare * (tier.multiplier || 1)));
+    const finalPrice = Math.max(0, Math.round(promoBaseFare * (tier.multiplier || 1)));
+    return {
+      code: tier.code,
+      label: tier.label,
+      description: tier.description,
+      multiplier: tier.multiplier,
+      sort_order: tier.sort_order,
+      original_price: originalPrice,
+      final_price: finalPrice,
+      discount_amount: Math.max(0, originalPrice - finalPrice),
+    };
+  });
+
+  const selectedTierCode = String(serviceTier || 'normal').toLowerCase();
+  const selectedTier =
+    tiers.find((tier) => tier.code === selectedTierCode) ||
+    tiers.find((tier) => tier.code === 'normal') ||
+    tiers[0];
+
+  const finalFare = selectedTier ? selectedTier.final_price : promoBaseFare;
+  const originalFare = selectedTier ? selectedTier.original_price : normalFare;
+
   return res.json({
     success: true,
     total_fare: finalFare,
-    normal_fare: normalFare,
+    normal_fare: originalFare,
+    original_fare: originalFare,
+    selected_tier: selectedTier ? selectedTier.code : 'normal',
     promo_applied: promoApplied,
     promo_code: promoCode,
     promo_name: promoName,
     distance_km: distanceKm,
     service_code: serviceCode,
     vehicle_type: vehicleType,
+    tiers,
   });
+});
+
+router.get('/tiers', async (req, res) => {
+  const tiers = await getActiveServiceTiers(req.db);
+  return res.json({ success: true, data: tiers });
 });
 
 module.exports = router;
