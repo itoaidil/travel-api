@@ -297,7 +297,8 @@ router.post('/midtrans/notification', async (req, res) => {
             distance_km: booking.distance_km,
             total_fare: booking.total_fare,
             item_type: booking.item_type,
-            item_size: booking.item_size
+            item_size: booking.item_size,
+            service_tier: booking.service_tier || 'normal'
           });
           
           console.log('✅ Driver notifications sent:', notificationResult);
@@ -321,7 +322,8 @@ router.post('/midtrans/notification', async (req, res) => {
                     pickup_address: booking.pickup_address,
                     dropoff_address: booking.dropoff_address,
                     distance_km: booking.distance_km,
-                    total_fare: booking.total_fare
+                    total_fare: booking.total_fare,
+                    service_tier: booking.service_tier || 'normal'
                   })
                 ]
               );

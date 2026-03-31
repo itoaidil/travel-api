@@ -689,7 +689,8 @@ router.post('/delivery/create', async (req, res) => {
               distance_km,
               total_fare,
               item_type,
-              item_size
+              item_size,
+              service_tier: service_tier || 'normal'
             });
             
             console.log('✅ Notifications sent:', notificationResult);
@@ -716,7 +717,8 @@ router.post('/delivery/create', async (req, res) => {
                       total_price: normalFare,
                       item_type,
                       item_size,
-                      customer_name: customerName
+                      customer_name: customerName,
+                      service_tier: service_tier || 'normal'
                     })
                   ]
                 );
