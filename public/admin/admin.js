@@ -37,6 +37,8 @@ let senderCoords = null;
 let recipientCoords = null;
 let driverStatusChartInstance = null;
 let franchiseStatusChartInstance = null;
+let customerGrowthChartInstance = null;
+let transactionsTrendChartInstance = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Show logged-in username in topbar
@@ -172,6 +174,8 @@ function setSidebarButtons(view) {
 function setViewVisibility(view) {
   const stats = document.getElementById('statsContainer');
   const dashboardCharts = document.getElementById('dashboardChartsSection');
+  const dashboardOps = document.getElementById('dashboardOpsSection');
+  const dashboardTrends = document.getElementById('dashboardTrendsSection');
   const controls = document.getElementById('listControlsSection');
   const listContainer = document.getElementById('driversContainer');
   const jobsSection = document.getElementById('jobsSection');
@@ -181,13 +185,15 @@ function setViewVisibility(view) {
   const expeditionPricingSection = document.getElementById('expeditionPricingSection');
 
   // Hide all first
-  [stats, dashboardCharts, controls, listContainer, jobsSection, applicantsSection, expeditionSection, batchDispatchSection, expeditionPricingSection].forEach(
+  [stats, dashboardCharts, dashboardOps, dashboardTrends, controls, listContainer, jobsSection, applicantsSection, expeditionSection, batchDispatchSection, expeditionPricingSection].forEach(
     (el) => el.classList.add('section-hidden')
   );
 
   if (view === 'dashboard') {
     stats.classList.remove('section-hidden');
     dashboardCharts.classList.remove('section-hidden');
+    dashboardOps.classList.remove('section-hidden');
+    dashboardTrends.classList.remove('section-hidden');
   } else if (view === 'jobs') {
     jobsSection.classList.remove('section-hidden');
   } else if (view === 'applicants') {
@@ -227,16 +233,34 @@ function setModuleButtons(mode) {
 
 async function loadDashboardStats() {
   try {
-    const [driverRes, franchiseRes] = await Promise.all([
+    const [driverRes, franchiseRes, heartbeatRes, bookingsTodayRes, customerGrowthRes, transactionsTrendRes] = await Promise.all([
       fetch(`${API_BASE_URL}/api/admin/drivers-stats`),
       fetch(`${API_BASE_URL}/api/admin/franchise/stats`),
+      fetch(`${API_BASE_URL}/api/driver-location/status-all?timeout_minutes=15`),
+      fetch(`${API_BASE_URL}/api/admin/dashboard/bookings-today`),
+      fetch(`${API_BASE_URL}/api/admin/dashboard/customer-growth`),
+      fetch(`${API_BASE_URL}/api/admin/dashboard/transactions-trend`),
     ]);
 
     const driverData = await driverRes.json();
     const franchiseData = await franchiseRes.json();
+    const heartbeatData = await heartbeatRes.json();
+    const bookingsTodayData = await bookingsTodayRes.json();
+    const customerGrowthData = await customerGrowthRes.json();
+    const transactionsTrendData = await transactionsTrendRes.json();
 
     const ds = driverData.stats || {};
     const fs = franchiseData.stats || {};
+    const heartbeatSummary = heartbeatData.success ? heartbeatData : {
+      total_drivers: 0,
+      online_count: 0,
+      offline_count: 0,
+      drivers: [],
+    };
+    const bookingsToday = bookingsTodayData.success ? bookingsTodayData : {
+      summary: { total_bookings: 0, total_amount: 0, first_booking_at: null, last_booking_at: null },
+      by_status: [],
+    };
 
     document.getElementById('statsContainer').innerHTML = `
       <div class="col-md-6 col-lg-3">
@@ -279,13 +303,220 @@ async function loadDashboardStats() {
           </div>
         </div>
       </div>
+      <div class="col-md-6 col-lg-3">
+        <div class="card small-stat blue">
+          <div class="card-body">
+            <h3>${bookingsToday.summary?.total_bookings || 0}</h3>
+            <div class="stat-label">Booking Hari Ini</div>
+            <div class="stat-icon"><i class="fas fa-receipt"></i></div>
+            <div class="stat-link">All Status</div>
+          </div>
+        </div>
+      </div>
     `;
 
     renderDashboardCharts(ds, fs);
+    renderHeartbeatDashboard(heartbeatSummary);
+    renderTodayBookingDashboard(bookingsToday);
+    renderCustomerGrowthChart(customerGrowthData.success ? customerGrowthData.data : []);
+    renderTransactionsTrendChart(transactionsTrendData.success ? transactionsTrendData.data : []);
   } catch (error) {
     console.error('Error loading dashboard stats:', error);
     showError('Failed to load dashboard');
   }
+}
+
+function renderHeartbeatDashboard(data) {
+  const summaryEl = document.getElementById('heartbeatSummaryCards');
+  const bodyEl = document.getElementById('heartbeatDriversTableBody');
+  const updatedAtEl = document.getElementById('heartbeatUpdatedAtLabel');
+
+  if (!summaryEl || !bodyEl || !updatedAtEl) return;
+
+  const drivers = Array.isArray(data.drivers) ? data.drivers : [];
+  const heartbeatActive = drivers.filter((d) => d.online === true && d.last_heartbeat).length;
+  const updatedAt = new Date().toLocaleString('id-ID');
+  updatedAtEl.textContent = `Update: ${updatedAt}`;
+
+  summaryEl.innerHTML = `
+    <div class="col-4">
+      <div class="border rounded p-2 bg-white h-100">
+        <div class="small text-muted">Total Driver</div>
+        <div class="fw-bold fs-5">${Number(data.total_drivers || 0).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+    <div class="col-4">
+      <div class="border rounded p-2 bg-white h-100">
+        <div class="small text-muted">Online</div>
+        <div class="fw-bold fs-5 text-success">${Number(data.online_count || 0).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+    <div class="col-4">
+      <div class="border rounded p-2 bg-white h-100">
+        <div class="small text-muted">Heartbeat Aktif</div>
+        <div class="fw-bold fs-5 text-primary">${Number(heartbeatActive || 0).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+  `;
+
+  if (!drivers.length) {
+    bodyEl.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Data heartbeat belum tersedia</td></tr>';
+    return;
+  }
+
+  bodyEl.innerHTML = drivers
+    .slice(0, 120)
+    .map((driver) => {
+      const onlineBadge = driver.online
+        ? '<span class="badge bg-success-subtle text-success">Online</span>'
+        : '<span class="badge bg-danger-subtle text-danger">Offline</span>';
+      const driverStatus = driver.status || '-';
+      const lastHb = driver.last_heartbeat
+        ? new Date(driver.last_heartbeat).toLocaleString('id-ID')
+        : 'never';
+      const minutes = driver.minutes_since_update ?? 'never';
+      return `
+        <tr>
+          <td>${driver.driver_id || '-'}</td>
+          <td>${driver.name || '-'}</td>
+          <td>${String(driverStatus).toUpperCase()}</td>
+          <td>${onlineBadge}</td>
+          <td>${lastHb}</td>
+          <td>${minutes}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderTodayBookingDashboard(data) {
+  const summaryEl = document.getElementById('todayBookingSummaryCards');
+  const bodyEl = document.getElementById('todayBookingStatusBody');
+
+  if (!summaryEl || !bodyEl) return;
+
+  const summary = data.summary || {};
+  const byStatus = Array.isArray(data.by_status) ? data.by_status : [];
+
+  summaryEl.innerHTML = `
+    <div class="col-6">
+      <div class="border rounded p-2 bg-white h-100">
+        <div class="small text-muted">Total Booking</div>
+        <div class="fw-bold fs-5">${Number(summary.total_bookings || 0).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+    <div class="col-6">
+      <div class="border rounded p-2 bg-white h-100">
+        <div class="small text-muted">Total Nominal</div>
+        <div class="fw-bold fs-6">Rp ${Number(summary.total_amount || 0).toLocaleString('id-ID')}</div>
+      </div>
+    </div>
+  `;
+
+  if (!byStatus.length) {
+    bodyEl.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">Belum ada pemesanan hari ini</td></tr>';
+    return;
+  }
+
+  bodyEl.innerHTML = byStatus
+    .map((item) => `
+      <tr>
+        <td>${String(item.booking_status || 'unknown').toUpperCase()}</td>
+        <td class="text-end fw-semibold">${Number(item.total || 0).toLocaleString('id-ID')}</td>
+      </tr>
+    `)
+    .join('');
+}
+
+function renderCustomerGrowthChart(rawData) {
+  if (typeof Chart === 'undefined') return;
+  const canvas = document.getElementById('customerGrowthChart');
+  if (!canvas) return;
+
+  const labels = buildLast30DaysLabels();
+  const dataMap = {};
+  rawData.forEach((row) => { dataMap[row.date] = Number(row.total || 0); });
+  const values = labels.map((d) => dataMap[d] || 0);
+
+  if (customerGrowthChartInstance) customerGrowthChartInstance.destroy();
+  customerGrowthChartInstance = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels.map((d) => formatDateLabel(d)),
+      datasets: [{
+        label: 'Customer Baru',
+        data: values,
+        borderColor: '#0ea5e9',
+        backgroundColor: 'rgba(14,165,233,0.12)',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#edf2f7' } },
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+      },
+    },
+  });
+}
+
+function renderTransactionsTrendChart(rawData) {
+  if (typeof Chart === 'undefined') return;
+  const canvas = document.getElementById('transactionsTrendChart');
+  if (!canvas) return;
+
+  const labels = buildLast30DaysLabels();
+  const countMap = {};
+  rawData.forEach((row) => { countMap[row.date] = Number(row.total_bookings || 0); });
+  const values = labels.map((d) => countMap[d] || 0);
+
+  if (transactionsTrendChartInstance) transactionsTrendChartInstance.destroy();
+  transactionsTrendChartInstance = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels.map((d) => formatDateLabel(d)),
+      datasets: [{
+        label: 'Jumlah Transaksi',
+        data: values,
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16,185,129,0.12)',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#edf2f7' } },
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+      },
+    },
+  });
+}
+
+function buildLast30DaysLabels() {
+  const dates = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function formatDateLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 function renderDashboardCharts(driverStats, franchiseStats) {

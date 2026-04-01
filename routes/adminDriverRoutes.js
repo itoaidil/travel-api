@@ -151,6 +151,52 @@ router.get('/drivers-stats', async (req, res) => {
   }
 });
 
+// Dashboard: independent bookings summary for today (all statuses)
+router.get('/dashboard/bookings-today', async (req, res) => {
+  try {
+    const db = req.db;
+
+    const [summaryRows] = await db.query(`
+      SELECT
+        COUNT(*) AS total_bookings,
+        COALESCE(SUM(total_price), 0) AS total_amount,
+        MIN(created_at) AS first_booking_at,
+        MAX(created_at) AS last_booking_at
+      FROM independent_bookings
+      WHERE DATE(created_at) = CURDATE()
+    `);
+
+    const [statusRows] = await db.query(`
+      SELECT
+        COALESCE(booking_status, 'unknown') AS booking_status,
+        COUNT(*) AS total
+      FROM independent_bookings
+      WHERE DATE(created_at) = CURDATE()
+      GROUP BY COALESCE(booking_status, 'unknown')
+      ORDER BY total DESC, booking_status ASC
+    `);
+
+    return res.json({
+      success: true,
+      date: new Date().toISOString().slice(0, 10),
+      summary: summaryRows[0] || {
+        total_bookings: 0,
+        total_amount: 0,
+        first_booking_at: null,
+        last_booking_at: null,
+      },
+      by_status: statusRows || [],
+    });
+  } catch (error) {
+    console.error('Error loading bookings today summary:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load today bookings summary',
+      error: error.message,
+    });
+  }
+});
+
 // Get all drivers with filters
 router.get('/drivers', async (req, res) => {
   try {
@@ -564,6 +610,47 @@ router.put('/drivers/:id/vehicle', async (req, res) => {
   } catch (error) {
     console.error('Error updating driver vehicle:', error);
     res.status(500).json({ success: false, message: 'Failed to update vehicle data', error: error.message });
+  }
+});
+
+// Dashboard: customer growth per day for the last 30 days
+router.get('/dashboard/customer-growth', async (req, res) => {
+  try {
+    const db = req.db;
+    const [rows] = await db.query(`
+      SELECT
+        DATE(created_at) AS date,
+        COUNT(*) AS total
+      FROM customers
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error loading customer growth:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Dashboard: transaction trend per day for the last 30 days (independent_bookings)
+router.get('/dashboard/transactions-trend', async (req, res) => {
+  try {
+    const db = req.db;
+    const [rows] = await db.query(`
+      SELECT
+        DATE(created_at) AS date,
+        COUNT(*) AS total_bookings,
+        COALESCE(SUM(total_price), 0) AS total_amount
+      FROM independent_bookings
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error loading transactions trend:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
