@@ -325,6 +325,15 @@ router.get('/delivery-summary', async (req, res) => {
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    const { date } = req.query; // format: YYYY-MM-DD
+    const conditions = ["bd.status = 'delivered'", 'bd.driver_id IS NOT NULL'];
+    const params = [];
+    if (date) {
+      conditions.push('DATE(bd.delivered_at) = ?');
+      params.push(date);
+    }
+    const where = conditions.join(' AND ');
+
     const [rows] = await db.query(
       `SELECT
          bd.driver_id,
@@ -333,12 +342,13 @@ router.get('/delivery-summary', async (req, res) => {
          MAX(bd.delivered_at) AS last_delivered_at
        FROM batch_deliveries bd
        LEFT JOIN independent_drivers d ON d.id = bd.driver_id
-       WHERE bd.status = 'delivered' AND bd.driver_id IS NOT NULL
+       WHERE ${where}
        GROUP BY bd.driver_id
-       ORDER BY total_delivered DESC, driver_name ASC`
+       ORDER BY total_delivered DESC, driver_name ASC`,
+      params
     );
 
-    return res.json({ success: true, data: rows });
+    return res.json({ success: true, data: rows, date: date || null });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

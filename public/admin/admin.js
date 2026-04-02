@@ -1681,7 +1681,11 @@ async function loadBatchDispatchDeliverySummary() {
 
   tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Memuat rekap kirim...</td></tr>';
 
-  const res = await fetch(`${API_BASE_URL}/api/batch-delivery/delivery-summary`);
+  const dateEl = document.getElementById('deliverySummaryDate');
+  const dateVal = dateEl ? dateEl.value : '';
+  const qs = dateVal ? `?date=${encodeURIComponent(dateVal)}` : '';
+
+  const res = await fetch(`${API_BASE_URL}/api/batch-delivery/delivery-summary${qs}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Gagal load rekap pengiriman');
 
