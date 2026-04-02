@@ -1555,6 +1555,7 @@ async function loadBatchDispatchPanel() {
     await Promise.all([
       loadBatchDispatchDrivers(),
       loadBatchDispatchSummary(),
+      loadBatchDispatchDeliverySummary(),
     ]);
     await loadBatchDispatchPackages();
     initDispatchSearchableCombos();
@@ -1672,6 +1673,36 @@ async function loadBatchDispatchSummary() {
 
   fillDispatchKawasanFilter();
   fillDispatchKawasanOptions();
+}
+
+async function loadBatchDispatchDeliverySummary() {
+  const tbody = document.getElementById('dispatchDeliverySummaryBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Memuat rekap kirim...</td></tr>';
+
+  const res = await fetch(`${API_BASE_URL}/api/batch-delivery/delivery-summary`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Gagal load rekap pengiriman');
+
+  const rows = data.data || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-2">Belum ada paket delivered</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r) => {
+    const lastAt = r.last_delivered_at
+      ? new Date(r.last_delivered_at).toLocaleString('id-ID')
+      : '-';
+    return `
+      <tr>
+        <td>${escapeHtml(r.driver_name || `Driver #${r.driver_id}`)}</td>
+        <td>${formatNumber(r.total_delivered || 0)}</td>
+        <td>${escapeHtml(lastAt)}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function fillDispatchKawasanFilter() {

@@ -123,6 +123,10 @@ async function findNextNearest(db, driverId, lat, lng) {
 }
 
 async function ensureBatchDeliveryPicColumns(db) {
+  const [recipientAddressColumn] = await db.query(
+    'SHOW COLUMNS FROM batch_deliveries LIKE ?',
+    ['recipient_address']
+  );
   const [kabupatenColumn] = await db.query(
     'SHOW COLUMNS FROM batch_deliveries LIKE ?',
     ['nama_kabupaten']
@@ -130,6 +134,10 @@ async function ensureBatchDeliveryPicColumns(db) {
   const namePicPosition = kabupatenColumn.length > 0 ? 'AFTER nama_kabupaten' : 'AFTER kawasan';
 
   const requiredColumns = [
+    {
+      name: 'recipient_district_code',
+      definition: "VARCHAR(20) NULL AFTER recipient_address",
+    },
     {
       name: 'nama_pic_penerima',
       definition: `VARCHAR(150) NULL ${namePicPosition}`,
@@ -184,14 +192,15 @@ router.post('/import', async (req, res) => {
         const lng = parseFloat(pkg.lng) || 0;
         const [result] = await db.query(
           `INSERT IGNORE INTO batch_deliveries (
-             row_no, npp, recipient_address, lat, lng, penerima,
+             row_no, npp, recipient_address, recipient_district_code, lat, lng, penerima,
              nama_pic_penerima, nomor_hp_pic
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             pkg.no || null,
             pkg.npp,
             pkg.address || '',
+            pkg.recipient_district_code || null,
             lat,
             lng,
             pkg.penerima || null,
@@ -304,6 +313,34 @@ router.get('/assigned-summary', async (req, res) => {
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/delivery-summary
+ * Rekap paket yang sudah terkirim (status delivered) per driver.
+ */
+router.get('/delivery-summary', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         bd.driver_id,
+         COALESCE(d.full_name, CONCAT('Driver #', bd.driver_id)) AS driver_name,
+         COUNT(*) AS total_delivered,
+         MAX(bd.delivered_at) AS last_delivered_at
+       FROM batch_deliveries bd
+       LEFT JOIN independent_drivers d ON d.id = bd.driver_id
+       WHERE bd.status = 'delivered' AND bd.driver_id IS NOT NULL
+       GROUP BY bd.driver_id
+       ORDER BY total_delivered DESC, driver_name ASC`
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
