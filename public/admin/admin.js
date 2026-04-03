@@ -33,6 +33,9 @@ let expeditionMinCharges = [];
 let dispatchDrivers = [];
 let dispatchSummaryRows = [];
 let dispatchSearchableReady = false;
+let dispatchPackagesPage = 1;
+let dispatchPackagesPageSize = 50;
+let dispatchPackagesTotal = 0;
 let senderCoords = null;
 let recipientCoords = null;
 let driverStatusChartInstance = null;
@@ -98,17 +101,32 @@ function bindEvents() {
   document.getElementById('expServicePricingForm').addEventListener('submit', saveExpeditionServicePricing);
   document.getElementById('expMinChargeForm').addEventListener('submit', saveExpeditionMinimumCharge);
   document.getElementById('dispatchRefreshBtn').addEventListener('click', loadBatchDispatchPanel);
-  document.getElementById('dispatchLoadPackagesBtn').addEventListener('click', loadBatchDispatchPackages);
-  document.getElementById('dispatchSearchInput').addEventListener('input', debounce(loadBatchDispatchPackages, 350));
+  document.getElementById('dispatchLoadPackagesBtn').addEventListener('click', () => loadBatchDispatchPackages({ resetPage: true }));
+  document.getElementById('dispatchSearchInput').addEventListener('input', debounce(() => loadBatchDispatchPackages({ resetPage: true }), 350));
   document.getElementById('dispatchReassignSelectedBtn').addEventListener('click', reassignSelectedPackages);
   document.getElementById('dispatchReassignMode').addEventListener('change', updateDispatchReassignHelp);
   document.getElementById('dispatchReassignKawasanBtn').addEventListener('click', reassignByKawasan);
   document.getElementById('dispatchSelectAll').addEventListener('change', toggleDispatchSelectAll);
-  document.getElementById('dispatchFilterDriver').addEventListener('change', loadBatchDispatchPackages);
-  document.getElementById('dispatchFilterKawasan').addEventListener('change', loadBatchDispatchPackages);
+  document.getElementById('dispatchFilterDriver').addEventListener('change', () => loadBatchDispatchPackages({ resetPage: true }));
+  document.getElementById('dispatchFilterKawasan').addEventListener('change', () => loadBatchDispatchPackages({ resetPage: true }));
+  document.getElementById('dispatchPageSize').addEventListener('change', (e) => {
+    dispatchPackagesPageSize = Math.min(Math.max(parseInt(e.target.value, 10) || 50, 1), 100);
+    loadBatchDispatchPackages({ resetPage: true });
+  });
+  document.getElementById('dispatchPrevPageBtn').addEventListener('click', () => {
+    if (dispatchPackagesPage <= 1) return;
+    dispatchPackagesPage -= 1;
+    loadBatchDispatchPackages();
+  });
+  document.getElementById('dispatchNextPageBtn').addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil((dispatchPackagesTotal || 0) / dispatchPackagesPageSize));
+    if (dispatchPackagesPage >= totalPages) return;
+    dispatchPackagesPage += 1;
+    loadBatchDispatchPackages();
+  });
   document.getElementById('dispatchSourceDriver').addEventListener('change', () => {
     fillDispatchKawasanOptions();
-    loadBatchDispatchPackages();
+    loadBatchDispatchPackages({ resetPage: true });
   });
 
   // Semua field penerima diisi manual oleh admin
@@ -1562,11 +1580,24 @@ async function loadBatchDispatchPanel() {
       loadBatchDispatchDeliverySummary(),
     ]);
     updateDispatchReassignHelp();
-    await loadBatchDispatchPackages();
+    await loadBatchDispatchPackages({ resetPage: true });
     initDispatchSearchableCombos();
   } catch (error) {
     showError(error.message || 'Gagal load dispatch panel');
   }
+}
+
+function updateDispatchPaginationControls() {
+  const infoEl = document.getElementById('dispatchPaginationInfo');
+  const prevBtn = document.getElementById('dispatchPrevPageBtn');
+  const nextBtn = document.getElementById('dispatchNextPageBtn');
+  const totalPages = Math.max(1, Math.ceil((dispatchPackagesTotal || 0) / dispatchPackagesPageSize));
+
+  if (infoEl) {
+    infoEl.textContent = `Halaman ${dispatchPackagesPage} dari ${totalPages} • Total ${formatNumber(dispatchPackagesTotal || 0)} paket`;
+  }
+  if (prevBtn) prevBtn.disabled = dispatchPackagesPage <= 1;
+  if (nextBtn) nextBtn.disabled = dispatchPackagesPage >= totalPages;
 }
 
 function updateDispatchReassignHelp() {
@@ -1756,18 +1787,22 @@ function fillDispatchKawasanOptions() {
   if (dispatchSearchableReady) initDispatchSearchableCombos();
 }
 
-async function loadBatchDispatchPackages() {
+async function loadBatchDispatchPackages(options = {}) {
+  const { resetPage = false } = options;
   const tbody = document.getElementById('dispatchPackagesBody');
   const hintEl = document.getElementById('dispatchHint');
   const driverId = getDispatchSelectValue('dispatchFilterDriver');
   const kawasan = getDispatchSelectValue('dispatchFilterKawasan');
   const q = String(document.getElementById('dispatchSearchInput')?.value || '').trim();
 
+  if (resetPage) dispatchPackagesPage = 1;
+
   try {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-2">Memuat paket...</td></tr>';
 
     const params = new URLSearchParams();
-    params.set('limit', '500');
+    params.set('limit', String(dispatchPackagesPageSize));
+    params.set('page', String(dispatchPackagesPage));
     if (driverId) params.set('driver_id', driverId);
     if (kawasan) params.set('kawasan', kawasan);
     if (q) params.set('q', q);
@@ -1775,6 +1810,10 @@ async function loadBatchDispatchPackages() {
     const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-list?${params.toString()}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal load paket assigned');
+
+    dispatchPackagesTotal = Number(data.total || 0);
+    dispatchPackagesPage = Number(data.page || dispatchPackagesPage || 1);
+    updateDispatchPaginationControls();
 
     const rows = data.data || [];
     if (!rows.length) {
@@ -1797,8 +1836,10 @@ async function loadBatchDispatchPackages() {
 
     const all = document.getElementById('dispatchSelectAll');
     if (all) all.checked = false;
-    hintEl.textContent = `Total ${formatNumber(rows.length)} paket assigned dimuat. Kamu bisa cari by NPP, penerima, atau alamat.`;
+    hintEl.textContent = `Menampilkan ${formatNumber(rows.length)} dari total ${formatNumber(dispatchPackagesTotal)} paket. Kamu bisa cari by NPP, penerima, atau alamat.`;
   } catch (error) {
+    dispatchPackagesTotal = 0;
+    updateDispatchPaginationControls();
     tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-2">Gagal memuat paket</td></tr>';
     hintEl.textContent = error.message || 'Gagal memuat paket assigned.';
   }

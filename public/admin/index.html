@@ -889,6 +889,20 @@
                                         </table>
                                     </div>
 
+                                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+                                        <small class="text-muted" id="dispatchPaginationInfo">Halaman 1 dari 1</small>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <label class="small text-muted mb-0" for="dispatchPageSize">Per halaman</label>
+                                            <select class="form-select form-select-sm" id="dispatchPageSize" style="width:90px">
+                                                <option value="25">25</option>
+                                                <option value="50" selected>50</option>
+                                                <option value="100">100</option>
+                                            </select>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dispatchPrevPageBtn">Prev</button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dispatchNextPageBtn">Next</button>
+                                        </div>
+                                    </div>
+
                                     <div class="mt-3 border rounded p-3 bg-light">
                                         <h6 class="fw-semibold mb-2">Reassign Per NPP / Per Penerima</h6>
                                         <div class="row g-2">

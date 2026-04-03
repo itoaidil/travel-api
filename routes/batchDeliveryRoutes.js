@@ -357,14 +357,14 @@ router.get('/delivery-summary', async (req, res) => {
 /**
  * GET /api/batch-delivery/assigned-list
  * List assigned packages for dispatch operations.
- * Query: driver_id (optional), kawasan (optional), q (optional), limit (optional)
+ * Query: driver_id (optional), kawasan (optional), q (optional), page (optional), limit (optional)
  */
 router.get('/assigned-list', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
-    const { driver_id, kawasan, q, limit = 300 } = req.query;
+    const { driver_id, kawasan, q, page = 1, limit = 50 } = req.query;
     const where = ["bd.status = 'assigned'"];
     const params = [];
 
@@ -390,8 +390,18 @@ router.get('/assigned-list', async (req, res) => {
       params.push(keyword, keyword, keyword);
     }
 
-    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+    const safePage = Math.max(parseInt(page, 10) || 1, 1);
+    const offset = (safePage - 1) * safeLimit;
     const whereClause = `WHERE ${where.join(' AND ')}`;
+
+    const [[countRow]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM batch_deliveries bd
+       ${whereClause}`,
+      params
+    );
+    const total = Number(countRow?.total || 0);
 
     const [rows] = await db.query(
       `SELECT
@@ -409,11 +419,19 @@ router.get('/assigned-list', async (req, res) => {
        LEFT JOIN independent_drivers d ON d.id = bd.driver_id
        ${whereClause}
        ORDER BY bd.assigned_at DESC, bd.id DESC
-       LIMIT ?`,
-      [...params, safeLimit]
+       LIMIT ? OFFSET ?`,
+      [...params, safeLimit, offset]
     );
 
-    res.json({ success: true, data: rows, limit: safeLimit });
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    res.json({
+      success: true,
+      data: rows,
+      page: safePage,
+      limit: safeLimit,
+      total,
+      total_pages: totalPages,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
