@@ -357,14 +357,14 @@ router.get('/delivery-summary', async (req, res) => {
 /**
  * GET /api/batch-delivery/assigned-list
  * List assigned packages for dispatch operations.
- * Query: driver_id (optional), kawasan (optional), limit (optional)
+ * Query: driver_id (optional), kawasan (optional), q (optional), limit (optional)
  */
 router.get('/assigned-list', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
-    const { driver_id, kawasan, limit = 300 } = req.query;
+    const { driver_id, kawasan, q, limit = 300 } = req.query;
     const where = ["bd.status = 'assigned'"];
     const params = [];
 
@@ -380,6 +380,15 @@ router.get('/assigned-list', async (req, res) => {
         params.push(kawasan);
       }
     }
+    if (q && String(q).trim()) {
+      const keyword = `%${String(q).trim()}%`;
+      where.push(`(
+        bd.npp LIKE ?
+        OR COALESCE(bd.penerima, '') LIKE ?
+        OR COALESCE(bd.recipient_address, '') LIKE ?
+      )`);
+      params.push(keyword, keyword, keyword);
+    }
 
     const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
     const whereClause = `WHERE ${where.join(' AND ')}`;
@@ -388,6 +397,7 @@ router.get('/assigned-list', async (req, res) => {
       `SELECT
          bd.id,
          bd.npp,
+        bd.penerima,
          bd.batch_code,
          bd.recipient_address,
          bd.kawasan,
@@ -412,8 +422,10 @@ router.get('/assigned-list', async (req, res) => {
 /**
  * POST /api/batch-delivery/reassign
  * Reassign packages to another driver.
- * Mode A (per package): { target_driver_id, package_ids: [1,2,3] }
- * Mode B (per kawasan): { target_driver_id, source_driver_id, kawasan }
+ * Mode A (per NPP): { target_driver_id, npp_list: ['NPP1', 'NPP2'], source_driver_id? }
+ * Mode B (per penerima): { target_driver_id, source_driver_id, recipient_names: ['Nama 1'] }
+ * Mode C (per package id): { target_driver_id, package_ids: [1,2,3] }
+ * Mode D (per kawasan): { target_driver_id, source_driver_id, kawasan }
  */
 router.post('/reassign', async (req, res) => {
   const db = req.db;
@@ -422,6 +434,8 @@ router.post('/reassign', async (req, res) => {
   try {
     const {
       target_driver_id,
+      npp_list,
+      recipient_names,
       package_ids,
       source_driver_id,
       kawasan,
@@ -440,7 +454,61 @@ router.post('/reassign', async (req, res) => {
     let result;
     let mode;
 
-    if (Array.isArray(package_ids) && package_ids.length > 0) {
+    if (Array.isArray(npp_list) && npp_list.length > 0) {
+      const npps = [...new Set(
+        npp_list
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+      )];
+
+      if (!npps.length) {
+        return res.status(400).json({ success: false, message: 'npp_list tidak valid' });
+      }
+
+      const fromDriver = parseInt(source_driver_id, 10);
+      const placeholders = npps.map(() => '?').join(',');
+      let query =
+        `UPDATE batch_deliveries
+         SET driver_id = ?, assigned_at = NOW()
+         WHERE status = 'assigned' AND npp IN (${placeholders})`;
+      const bind = [toDriver, ...npps];
+
+      if (fromDriver) {
+        query += ' AND driver_id = ?';
+        bind.push(fromDriver);
+      }
+
+      [result] = await db.query(query, bind);
+      mode = 'npp';
+    } else if (Array.isArray(recipient_names) && recipient_names.length > 0) {
+      const fromDriver = parseInt(source_driver_id, 10);
+      if (!fromDriver) {
+        return res.status(400).json({
+          success: false,
+          message: 'Untuk mode penerima, source_driver_id wajib diisi',
+        });
+      }
+
+      const names = [...new Set(
+        recipient_names
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+      )];
+
+      if (!names.length) {
+        return res.status(400).json({ success: false, message: 'recipient_names tidak valid' });
+      }
+
+      const placeholders = names.map(() => '?').join(',');
+      [result] = await db.query(
+        `UPDATE batch_deliveries
+         SET driver_id = ?, assigned_at = NOW()
+         WHERE status = 'assigned' AND driver_id = ?
+           AND COALESCE(penerima, '') IN (${placeholders})`,
+        [toDriver, fromDriver, ...names]
+      );
+      mode = 'recipient';
+    } else if (Array.isArray(package_ids) && package_ids.length > 0) {
       const ids = package_ids
         .map((x) => parseInt(x, 10))
         .filter((x) => Number.isInteger(x) && x > 0);

@@ -99,9 +99,13 @@ function bindEvents() {
   document.getElementById('expMinChargeForm').addEventListener('submit', saveExpeditionMinimumCharge);
   document.getElementById('dispatchRefreshBtn').addEventListener('click', loadBatchDispatchPanel);
   document.getElementById('dispatchLoadPackagesBtn').addEventListener('click', loadBatchDispatchPackages);
+  document.getElementById('dispatchSearchInput').addEventListener('input', debounce(loadBatchDispatchPackages, 350));
   document.getElementById('dispatchReassignSelectedBtn').addEventListener('click', reassignSelectedPackages);
+  document.getElementById('dispatchReassignMode').addEventListener('change', updateDispatchReassignHelp);
   document.getElementById('dispatchReassignKawasanBtn').addEventListener('click', reassignByKawasan);
   document.getElementById('dispatchSelectAll').addEventListener('change', toggleDispatchSelectAll);
+  document.getElementById('dispatchFilterDriver').addEventListener('change', loadBatchDispatchPackages);
+  document.getElementById('dispatchFilterKawasan').addEventListener('change', loadBatchDispatchPackages);
   document.getElementById('dispatchSourceDriver').addEventListener('change', () => {
     fillDispatchKawasanOptions();
     loadBatchDispatchPackages();
@@ -1557,11 +1561,25 @@ async function loadBatchDispatchPanel() {
       loadBatchDispatchSummary(),
       loadBatchDispatchDeliverySummary(),
     ]);
+    updateDispatchReassignHelp();
     await loadBatchDispatchPackages();
     initDispatchSearchableCombos();
   } catch (error) {
     showError(error.message || 'Gagal load dispatch panel');
   }
+}
+
+function updateDispatchReassignHelp() {
+  const mode = getDispatchSelectValue('dispatchReassignMode') || 'npp';
+  const helpEl = document.getElementById('dispatchReassignHelp');
+  if (!helpEl) return;
+
+  if (mode === 'recipient') {
+    helpEl.textContent = 'Mode Per Penerima: pilih baris penerima lalu pastikan Filter Driver dipilih agar pemindahan aman.';
+    return;
+  }
+
+  helpEl.textContent = 'Mode Per NPP: pilih baris paket yang ingin dipindahkan.';
 }
 
 function initDispatchSearchableCombos() {
@@ -1743,14 +1761,16 @@ async function loadBatchDispatchPackages() {
   const hintEl = document.getElementById('dispatchHint');
   const driverId = getDispatchSelectValue('dispatchFilterDriver');
   const kawasan = getDispatchSelectValue('dispatchFilterKawasan');
+  const q = String(document.getElementById('dispatchSearchInput')?.value || '').trim();
 
   try {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Memuat paket...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-2">Memuat paket...</td></tr>';
 
     const params = new URLSearchParams();
     params.set('limit', '500');
     if (driverId) params.set('driver_id', driverId);
     if (kawasan) params.set('kawasan', kawasan);
+    if (q) params.set('q', q);
 
     const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-list?${params.toString()}`);
     const data = await res.json();
@@ -1758,16 +1778,18 @@ async function loadBatchDispatchPackages() {
 
     const rows = data.data || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-2">Tidak ada paket sesuai filter</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-2">Tidak ada paket sesuai filter</td></tr>';
       hintEl.textContent = 'Belum ada data assigned untuk filter tersebut.';
       return;
     }
 
     tbody.innerHTML = rows.map((r) => `
       <tr>
-        <td><input type="checkbox" class="dispatch-item-check" value="${r.id}"></td>
+        <td><input type="checkbox" class="dispatch-item-check" value="${r.id}" data-npp="${encodeURIComponent(r.npp || '')}" data-recipient="${encodeURIComponent(r.penerima || '')}"></td>
         <td>${r.id}</td>
         <td>${escapeHtml(r.npp || '-')}</td>
+        <td>${escapeHtml(r.penerima || '-')}</td>
+        <td><small>${escapeHtml(r.recipient_address || '-')}</small></td>
         <td>${escapeHtml(r.kawasan || '(tanpa kawasan)')}</td>
         <td>${escapeHtml(r.driver_name || `Driver #${r.driver_id}`)}</td>
       </tr>
@@ -1775,9 +1797,9 @@ async function loadBatchDispatchPackages() {
 
     const all = document.getElementById('dispatchSelectAll');
     if (all) all.checked = false;
-    hintEl.textContent = `Total ${formatNumber(rows.length)} paket assigned dimuat. Pilih paket atau gunakan mode per kawasan.`;
+    hintEl.textContent = `Total ${formatNumber(rows.length)} paket assigned dimuat. Kamu bisa cari by NPP, penerima, atau alamat.`;
   } catch (error) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-2">Gagal memuat paket</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-2">Gagal memuat paket</td></tr>';
     hintEl.textContent = error.message || 'Gagal memuat paket assigned.';
   }
 }
@@ -1795,33 +1817,67 @@ function getSelectedDispatchPackageIds() {
     .filter((x) => Number.isInteger(x) && x > 0);
 }
 
+function getSelectedDispatchValues(attrName) {
+  return [...new Set(
+    Array.from(document.querySelectorAll('.dispatch-item-check:checked'))
+      .map((el) => decodeURIComponent(el.dataset[attrName] || '').trim())
+      .filter(Boolean)
+  )];
+}
+
 async function reassignSelectedPackages() {
   try {
+    const mode = getDispatchSelectValue('dispatchReassignMode') || 'npp';
     const targetDriverId = parseInt(getDispatchSelectValue('dispatchTargetDriver'), 10);
-    const packageIds = getSelectedDispatchPackageIds();
+    const sourceDriverId = parseInt(getDispatchSelectValue('dispatchFilterDriver'), 10);
+    const nppList = getSelectedDispatchValues('npp');
+    const recipientNames = getSelectedDispatchValues('recipient');
 
     if (!targetDriverId) {
       showError('Pilih driver tujuan terlebih dahulu');
       return;
     }
-    if (!packageIds.length) {
-      showError('Pilih minimal 1 paket yang ingin dipindahkan');
-      return;
+
+    const payload = { target_driver_id: targetDriverId };
+    let confirmMessage = '';
+
+    if (mode === 'recipient') {
+      if (!sourceDriverId) {
+        showError('Untuk mode per penerima, pilih Filter Driver terlebih dahulu');
+        return;
+      }
+      if (!recipientNames.length) {
+        showError('Pilih minimal 1 penerima dari baris yang dicentang');
+        return;
+      }
+      payload.source_driver_id = sourceDriverId;
+      payload.recipient_names = recipientNames;
+      confirmMessage = `Pindahkan semua paket assigned dari ${recipientNames.length} penerima ke driver tujuan?`;
+    } else {
+      if (!nppList.length) {
+        showError('Pilih minimal 1 NPP dari baris yang dicentang');
+        return;
+      }
+      payload.npp_list = nppList;
+      if (sourceDriverId) payload.source_driver_id = sourceDriverId;
+      confirmMessage = `Pindahkan ${nppList.length} NPP ke driver tujuan?`;
     }
-    if (!confirm(`Pindahkan ${packageIds.length} paket ke driver tujuan?`)) return;
+
+    if (!confirm(confirmMessage)) return;
 
     const res = await fetch(`${API_BASE_URL}/api/batch-delivery/reassign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        target_driver_id: targetDriverId,
-        package_ids: packageIds,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Gagal reassign per paket');
+    if (!data.success) throw new Error(data.message || 'Gagal reassign data terpilih');
 
-    showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket`);
+    if (mode === 'recipient') {
+      showSuccess(`Berhasil memindahkan paket dari ${recipientNames.length} penerima (${data.data?.moved || 0} paket)`);
+    } else {
+      showSuccess(`Berhasil memindahkan ${nppList.length} NPP (${data.data?.moved || 0} paket)`);
+    }
     await loadBatchDispatchPanel();
   } catch (error) {
     showError(error.message || 'Gagal reassign paket');

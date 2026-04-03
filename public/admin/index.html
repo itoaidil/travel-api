@@ -849,17 +849,21 @@
                         </div>
                         <div class="card-body">
                             <div class="row g-3 mb-3">
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label">Filter Driver</label>
                                     <select class="form-select" id="dispatchFilterDriver"></select>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label">Filter Kawasan</label>
                                     <select class="form-select" id="dispatchFilterKawasan">
                                         <option value="">Semua Kawasan</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4 d-flex align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label">Cari (NPP / Penerima / Alamat)</label>
+                                    <input type="text" class="form-control" id="dispatchSearchInput" placeholder="Contoh: NPP00123 / Budi / Jl. Merdeka">
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
                                     <button type="button" class="btn btn-outline-secondary w-100" id="dispatchLoadPackagesBtn">Muat Paket Assigned</button>
                                 </div>
                             </div>
@@ -875,6 +879,8 @@
                                                     <th style="width:36px"><input type="checkbox" id="dispatchSelectAll"></th>
                                                     <th>ID</th>
                                                     <th>NPP</th>
+                                                    <th>Penerima</th>
+                                                    <th>Alamat</th>
                                                     <th>Kawasan</th>
                                                     <th>Driver</th>
                                                 </tr>
@@ -884,14 +890,24 @@
                                     </div>
 
                                     <div class="mt-3 border rounded p-3 bg-light">
-                                        <h6 class="fw-semibold mb-2">Reassign Per Paket (ID terpilih)</h6>
+                                        <h6 class="fw-semibold mb-2">Reassign Per NPP / Per Penerima</h6>
                                         <div class="row g-2">
+                                            <div class="col-md-4">
+                                                <label class="form-label">Mode Pindah</label>
+                                                <select class="form-select form-select-sm" id="dispatchReassignMode">
+                                                    <option value="npp">Per NPP (terpilih)</option>
+                                                    <option value="recipient">Per Penerima (terpilih)</option>
+                                                </select>
+                                            </div>
                                             <div class="col-md-8">
                                                 <label class="form-label">Driver Tujuan</label>
                                                 <select class="form-select form-select-sm" id="dispatchTargetDriver"></select>
                                             </div>
+                                            <div class="col-12">
+                                                <small class="text-muted" id="dispatchReassignHelp">Mode Per NPP: pilih baris paket yang ingin dipindahkan.</small>
+                                            </div>
                                             <div class="col-md-4 d-flex align-items-end">
-                                                <button type="button" class="btn btn-primary w-100" id="dispatchReassignSelectedBtn">Pindahkan Paket Terpilih</button>
+                                                <button type="button" class="btn btn-primary w-100" id="dispatchReassignSelectedBtn">Pindahkan Data Terpilih</button>
                                             </div>
                                         </div>
                                     </div>
