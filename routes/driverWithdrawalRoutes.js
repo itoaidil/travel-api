@@ -510,7 +510,7 @@ router.post('/admin/:id/approve', async (req, res) => {
     danaService.createDisbursement({
       id: withdrawal.id,
       driver_id: withdrawal.driver_id,
-      amount: withdrawal.amount,
+      amount: withdrawal.withdrawal_amount,
       bank_name: withdrawal.bank_name,
       bank_account_number: withdrawal.bank_account_number,
       bank_account_holder: withdrawal.bank_account_holder,

@@ -136,9 +136,21 @@ router.post('/dana-disburse-callback', async (req, res) => {
       });
     }
 
-    // Extract withdrawal ID from partnerReferenceNo
-    // Format: WD-123 or just 123
-    const withdrawalId = partnerReferenceNo.toString().replace(/^WD-/, '');
+    // Extract withdrawal ID from partnerReferenceNo.
+    // Supported format: WD-{id}-{timestamp} or plain numeric id.
+    const partnerRefRaw = String(partnerReferenceNo || '').trim();
+    const refMatch = partnerRefRaw.match(/^WD-(\d+)(?:-|$)/i);
+    const withdrawalId = refMatch
+      ? parseInt(refMatch[1], 10)
+      : (/^\d+$/.test(partnerRefRaw) ? parseInt(partnerRefRaw, 10) : NaN);
+
+    if (!Number.isInteger(withdrawalId) || withdrawalId <= 0) {
+      console.error(`❌ Invalid partnerReferenceNo format: ${partnerRefRaw}`);
+      return res.status(400).json({
+        responseCode: '4000000',
+        responseMessage: 'Invalid partnerReferenceNo'
+      });
+    }
 
     console.log(`🔍 Processing withdrawal ID: ${withdrawalId}, DANA Status: ${disbursementStatus}`);
 
