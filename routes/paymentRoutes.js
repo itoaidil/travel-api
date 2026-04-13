@@ -216,9 +216,11 @@ router.post('/midtrans/notification', async (req, res) => {
     }
 
     // Update booking with payment information
+    // Also set payment_method = 'midtrans' as safety net in case booking was created with incorrect value
     const updateQuery = `
       UPDATE independent_bookings 
       SET payment_status = ?,
+          payment_method = 'midtrans',
           payment_transaction_id = ?,
           payment_transaction_status = ?,
           payment_transaction_time = ?,
