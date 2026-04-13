@@ -430,22 +430,7 @@
                 <div class="row mb-4" id="statsContainer"></div>
 
                 <div class="row g-3 mb-4" id="dashboardChartsSection">
-                    <div class="col-lg-7">
-                        <div class="chart-card h-100">
-                            <div class="chart-head"><i class="fas fa-chart-area me-2"></i>Status Driver</div>
-                            <div class="chart-wrap">
-                                <canvas id="driverStatusChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-5">
-                        <div class="chart-card h-100">
-                            <div class="chart-head"><i class="fas fa-chart-pie me-2"></i>Status Franchise</div>
-                            <div class="chart-wrap">
-                                <canvas id="franchiseStatusChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Charts removed: replaced by transaction list below -->
                 </div>
 
                 <div class="row g-3 mb-4" id="dashboardOpsSection">
@@ -499,21 +484,84 @@
                     </div>
                 </div>
 
-                <!-- Trend charts: customer growth + transactions -->
+                <!-- Transaction list (replaces trend charts) -->
                 <div class="row g-3 mb-4 section-hidden" id="dashboardTrendsSection">
-                    <div class="col-lg-6">
-                        <div class="chart-card h-100">
-                            <div class="chart-head"><i class="fas fa-users me-2"></i>Pertumbuhan Customer (30 Hari Terakhir)</div>
-                            <div class="chart-wrap">
-                                <canvas id="customerGrowthChart"></canvas>
+                    <div class="col-12">
+                        <div class="chart-card">
+                            <div class="chart-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <span><i class="fas fa-list-check me-2"></i>Daftar Transaksi</span>
+                                <small class="text-muted" id="txListUpdatedLabel"></small>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-6">
-                        <div class="chart-card h-100">
-                            <div class="chart-head"><i class="fas fa-chart-line me-2"></i>Tren Transaksi (30 Hari Terakhir)</div>
-                            <div class="chart-wrap">
-                                <canvas id="transactionsTrendChart"></canvas>
+                            <!-- Filter bar -->
+                            <div class="p-3 border-bottom bg-light">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-sm-6 col-md-3">
+                                        <label class="form-label small mb-1">Dari Tanggal</label>
+                                        <input type="date" class="form-control form-control-sm" id="txDateFrom">
+                                    </div>
+                                    <div class="col-sm-6 col-md-3">
+                                        <label class="form-label small mb-1">Sampai Tanggal</label>
+                                        <input type="date" class="form-control form-control-sm" id="txDateTo">
+                                    </div>
+                                    <div class="col-sm-6 col-md-2">
+                                        <label class="form-label small mb-1">Status</label>
+                                        <select class="form-select form-select-sm" id="txStatusFilter">
+                                            <option value="all">Semua Status</option>
+                                            <option value="pending">Pending</option>
+                                            <option value="accepted">Accepted</option>
+                                            <option value="in_progress">In Progress</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-6 col-md-3">
+                                        <label class="form-label small mb-1">Cari</label>
+                                        <input type="text" class="form-control form-control-sm" id="txSearch" placeholder="Kode, nama, HP, alamat...">
+                                    </div>
+                                    <div class="col-md-1 d-flex gap-1">
+                                        <button class="btn btn-primary btn-sm w-100" id="txSearchBtn"><i class="fas fa-search"></i></button>
+                                        <button class="btn btn-outline-secondary btn-sm w-100" id="txResetBtn" title="Reset"><i class="fas fa-rotate-left"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Summary badges -->
+                            <div class="px-3 pt-2 pb-1" id="txSummaryRow"></div>
+                            <!-- Table -->
+                            <div class="table-responsive" style="max-height: 480px; overflow: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Kode</th>
+                                            <th>Tipe</th>
+                                            <th>Customer</th>
+                                            <th>Driver</th>
+                                            <th>Pickup</th>
+                                            <th>Dropoff</th>
+                                            <th class="text-end">Km</th>
+                                            <th class="text-end">Nominal</th>
+                                            <th>Bayar</th>
+                                            <th>Status</th>
+                                            <th>Waktu</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="txListBody">
+                                        <tr><td colspan="12" class="text-center text-muted py-4">Memuat data...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- Pagination -->
+                            <div class="d-flex justify-content-between align-items-center p-3 border-top flex-wrap gap-2">
+                                <div class="small text-muted" id="txPaginationInfo">-</div>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <select class="form-select form-select-sm" style="width:auto" id="txPageSize">
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-outline-secondary" id="txPrevBtn">&#8592; Prev</button>
+                                    <button class="btn btn-sm btn-outline-secondary" id="txNextBtn">Next &#8594;</button>
+                                </div>
                             </div>
                         </div>
                     </div>

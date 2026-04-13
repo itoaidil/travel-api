@@ -654,4 +654,87 @@ router.get('/dashboard/transactions-trend', async (req, res) => {
   }
 });
 
+// Dashboard: list transaksi dengan filter tanggal, status, dan pencarian
+router.get('/dashboard/transactions-list', async (req, res) => {
+  try {
+    const db = req.db;
+    const { date_from, date_to, status, search, page = 1, limit = 50 } = req.query;
+
+    const offset = (Math.max(1, parseInt(page)) - 1) * Math.min(100, parseInt(limit));
+    const limitVal = Math.min(100, parseInt(limit) || 50);
+
+    const conditions = [];
+    const params = [];
+
+    // Default: hari ini jika tidak ada filter tanggal
+    if (date_from) {
+      conditions.push('DATE(ib.created_at) >= ?');
+      params.push(date_from);
+    } else if (!date_to) {
+      conditions.push('DATE(ib.created_at) = CURDATE()');
+    }
+
+    if (date_to) {
+      conditions.push('DATE(ib.created_at) <= ?');
+      params.push(date_to);
+    }
+
+    if (status && status !== 'all') {
+      conditions.push('ib.booking_status = ?');
+      params.push(status);
+    }
+
+    if (search) {
+      conditions.push('(ib.booking_code LIKE ? OR ib.customer_name LIKE ? OR ib.customer_phone LIKE ? OR ib.pickup_address LIKE ? OR ib.dropoff_address LIKE ?)');
+      const like = `%${search}%`;
+      params.push(like, like, like, like, like);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [countRows] = await db.query(
+      `SELECT COUNT(*) AS total FROM independent_bookings ib ${where}`,
+      params
+    );
+    const total = countRows[0].total;
+
+    const [rows] = await db.query(
+      `SELECT
+        ib.id,
+        ib.booking_code,
+        ib.booking_type,
+        ib.customer_name,
+        ib.customer_phone,
+        ib.driver_name,
+        ib.vehicle_type,
+        ib.pickup_address,
+        ib.dropoff_address,
+        ib.distance_km,
+        ib.total_price,
+        ib.booking_status,
+        ib.payment_method,
+        ib.payment_status,
+        ib.created_at,
+        ib.completed_at
+      FROM independent_bookings ib
+      ${where}
+      ORDER BY ib.created_at DESC
+      LIMIT ? OFFSET ?`,
+      [...params, limitVal, offset]
+    );
+
+    return res.json({
+      success: true,
+      total,
+      page: parseInt(page),
+      limit: limitVal,
+      total_pages: Math.ceil(total / limitVal),
+      data: rows,
+    });
+  } catch (error) {
+    console.error('Error loading transactions list:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

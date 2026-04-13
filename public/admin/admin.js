@@ -43,6 +43,15 @@ let franchiseStatusChartInstance = null;
 let customerGrowthChartInstance = null;
 let transactionsTrendChartInstance = null;
 
+// Transaction list state
+let txPage = 1;
+let txPageSize = 50;
+let txTotal = 0;
+let txDateFrom = '';
+let txDateTo = '';
+let txStatus = 'all';
+let txSearch = '';
+
 document.addEventListener('DOMContentLoaded', () => {
   // Show logged-in username in topbar
   try {
@@ -255,21 +264,17 @@ function setModuleButtons(mode) {
 
 async function loadDashboardStats() {
   try {
-    const [driverRes, franchiseRes, heartbeatRes, bookingsTodayRes, customerGrowthRes, transactionsTrendRes] = await Promise.all([
+    const [driverRes, franchiseRes, heartbeatRes, bookingsTodayRes] = await Promise.all([
       fetch(`${API_BASE_URL}/api/admin/drivers-stats`),
       fetch(`${API_BASE_URL}/api/admin/franchise/stats`),
       fetch(`${API_BASE_URL}/api/driver-location/status-all?timeout_minutes=15`),
       fetch(`${API_BASE_URL}/api/admin/dashboard/bookings-today`),
-      fetch(`${API_BASE_URL}/api/admin/dashboard/customer-growth`),
-      fetch(`${API_BASE_URL}/api/admin/dashboard/transactions-trend`),
     ]);
 
     const driverData = await driverRes.json();
     const franchiseData = await franchiseRes.json();
     const heartbeatData = await heartbeatRes.json();
     const bookingsTodayData = await bookingsTodayRes.json();
-    const customerGrowthData = await customerGrowthRes.json();
-    const transactionsTrendData = await transactionsTrendRes.json();
 
     const ds = driverData.stats || {};
     const fs = franchiseData.stats || {};
@@ -337,11 +342,9 @@ async function loadDashboardStats() {
       </div>
     `;
 
-    renderDashboardCharts(ds, fs);
     renderHeartbeatDashboard(heartbeatSummary);
     renderTodayBookingDashboard(bookingsToday);
-    renderCustomerGrowthChart(customerGrowthData.success ? customerGrowthData.data : []);
-    renderTransactionsTrendChart(transactionsTrendData.success ? transactionsTrendData.data : []);
+    initTxListPanel();
   } catch (error) {
     console.error('Error loading dashboard stats:', error);
     showError('Failed to load dashboard');
@@ -450,176 +453,157 @@ function renderTodayBookingDashboard(data) {
     .join('');
 }
 
-function renderCustomerGrowthChart(rawData) {
-  if (typeof Chart === 'undefined') return;
-  const canvas = document.getElementById('customerGrowthChart');
-  if (!canvas) return;
+// ── Transaction list panel (replaces dashboard charts) ──────────────────────
 
-  const labels = buildLast30DaysLabels();
-  const dataMap = {};
-  rawData.forEach((row) => { dataMap[row.date] = Number(row.total || 0); });
-  const values = labels.map((d) => dataMap[d] || 0);
+let txListInitialized = false;
 
-  if (customerGrowthChartInstance) customerGrowthChartInstance.destroy();
-  customerGrowthChartInstance = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: labels.map((d) => formatDateLabel(d)),
-      datasets: [{
-        label: 'Customer Baru',
-        data: values,
-        borderColor: '#0ea5e9',
-        backgroundColor: 'rgba(14,165,233,0.12)',
-        borderWidth: 2,
-        pointRadius: 3,
-        fill: true,
-        tension: 0.35,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#edf2f7' } },
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
-      },
-    },
-  });
-}
-
-function renderTransactionsTrendChart(rawData) {
-  if (typeof Chart === 'undefined') return;
-  const canvas = document.getElementById('transactionsTrendChart');
-  if (!canvas) return;
-
-  const labels = buildLast30DaysLabels();
-  const countMap = {};
-  rawData.forEach((row) => { countMap[row.date] = Number(row.total_bookings || 0); });
-  const values = labels.map((d) => countMap[d] || 0);
-
-  if (transactionsTrendChartInstance) transactionsTrendChartInstance.destroy();
-  transactionsTrendChartInstance = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: labels.map((d) => formatDateLabel(d)),
-      datasets: [{
-        label: 'Jumlah Transaksi',
-        data: values,
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16,185,129,0.12)',
-        borderWidth: 2,
-        pointRadius: 3,
-        fill: true,
-        tension: 0.35,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#edf2f7' } },
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
-      },
-    },
-  });
-}
-
-function buildLast30DaysLabels() {
-  const dates = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
+function initTxListPanel() {
+  if (txListInitialized) {
+    loadTransactionsList(1);
+    return;
   }
-  return dates;
-}
+  txListInitialized = true;
 
-function formatDateLabel(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return `${d.getDate()}/${d.getMonth() + 1}`;
-}
+  // Set default date range to today
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dateFromEl = document.getElementById('txDateFrom');
+  const dateToEl = document.getElementById('txDateTo');
+  if (dateFromEl) dateFromEl.value = todayStr;
+  if (dateToEl) dateToEl.value = todayStr;
 
-function renderDashboardCharts(driverStats, franchiseStats) {
-  if (typeof Chart === 'undefined') return;
-
-  const driverCanvas = document.getElementById('driverStatusChart');
-  const franchiseCanvas = document.getElementById('franchiseStatusChart');
-  if (!driverCanvas || !franchiseCanvas) return;
-
-  const driverData = [
-    Number(driverStats.pending || 0),
-    Number(driverStats.approved || 0),
-    Number(driverStats.rejected || 0),
-  ];
-
-  const franchiseData = [
-    Number(franchiseStats.pending || 0),
-    Number(franchiseStats.active || 0),
-    Number(franchiseStats.inactive || 0),
-  ];
-
-  if (driverStatusChartInstance) driverStatusChartInstance.destroy();
-  if (franchiseStatusChartInstance) franchiseStatusChartInstance.destroy();
-
-  driverStatusChartInstance = new Chart(driverCanvas, {
-    type: 'bar',
-    data: {
-      labels: ['Pending', 'Approved', 'Rejected'],
-      datasets: [{
-        label: 'Driver',
-        data: driverData,
-        backgroundColor: ['#f59e0b', '#10b981', '#ef4444'],
-        borderRadius: 6,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { precision: 0 },
-          grid: { color: '#edf2f7' },
-        },
-        x: {
-          grid: { display: false },
-        },
-      },
-    },
+  document.getElementById('txPageSize')?.addEventListener('change', (e) => {
+    txPageSize = parseInt(e.target.value) || 50;
+    loadTransactionsList(1);
   });
 
-  franchiseStatusChartInstance = new Chart(franchiseCanvas, {
-    type: 'doughnut',
-    data: {
-      labels: ['Pending', 'Active', 'Inactive'],
-      datasets: [{
-        data: franchiseData,
-        backgroundColor: ['#f59e0b', '#0ea5e9', '#ef4444'],
-        borderWidth: 0,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '62%',
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: {
-            boxWidth: 12,
-            usePointStyle: true,
-            pointStyle: 'circle',
-          },
-        },
-      },
-    },
+  document.getElementById('txSearchBtn')?.addEventListener('click', () => {
+    loadTransactionsList(1);
   });
+
+  document.getElementById('txResetBtn')?.addEventListener('click', () => {
+    const todayStr2 = new Date().toISOString().slice(0, 10);
+    document.getElementById('txDateFrom').value = todayStr2;
+    document.getElementById('txDateTo').value = todayStr2;
+    document.getElementById('txStatusFilter').value = 'all';
+    document.getElementById('txSearch').value = '';
+    loadTransactionsList(1);
+  });
+
+  document.getElementById('txSearch')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadTransactionsList(1);
+  });
+
+  document.getElementById('txPrevBtn')?.addEventListener('click', () => {
+    if (txPage > 1) loadTransactionsList(txPage - 1);
+  });
+
+  document.getElementById('txNextBtn')?.addEventListener('click', () => {
+    const totalPages = Math.ceil(txTotal / txPageSize);
+    if (txPage < totalPages) loadTransactionsList(txPage + 1);
+  });
+
+  loadTransactionsList(1);
 }
+
+async function loadTransactionsList(page = 1) {
+  txPage = page;
+  txDateFrom = document.getElementById('txDateFrom')?.value || '';
+  txDateTo = document.getElementById('txDateTo')?.value || '';
+  txStatus = document.getElementById('txStatusFilter')?.value || 'all';
+  txSearch = document.getElementById('txSearch')?.value.trim() || '';
+  txPageSize = parseInt(document.getElementById('txPageSize')?.value || '50');
+
+  const params = new URLSearchParams({ page, limit: txPageSize });
+  if (txDateFrom) params.set('date_from', txDateFrom);
+  if (txDateTo) params.set('date_to', txDateTo);
+  if (txStatus && txStatus !== 'all') params.set('status', txStatus);
+  if (txSearch) params.set('search', txSearch);
+
+  const tbody = document.getElementById('txListBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-1"></i> Memuat...</td></tr>';
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/admin/dashboard/transactions-list?${params}`, {
+      headers: getAdminAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal memuat data');
+
+    txTotal = data.total || 0;
+    const rows = data.data || [];
+    const totalPages = data.total_pages || 1;
+
+    // Summary badges
+    const summaryEl = document.getElementById('txSummaryRow');
+    if (summaryEl) {
+      summaryEl.innerHTML = `<span class="badge bg-secondary me-1">${txTotal} transaksi</span>`;
+    }
+
+    // Pagination info
+    const start = txTotal === 0 ? 0 : (page - 1) * txPageSize + 1;
+    const end = Math.min(page * txPageSize, txTotal);
+    document.getElementById('txPaginationInfo').textContent = `Menampilkan ${start}–${end} dari ${txTotal}`;
+    document.getElementById('txPrevBtn').disabled = page <= 1;
+    document.getElementById('txNextBtn').disabled = page >= totalPages;
+
+    // Updated label
+    document.getElementById('txListUpdatedLabel').textContent = `Diperbarui: ${new Date().toLocaleTimeString('id-ID')}`;
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Tidak ada transaksi ditemukan</td></tr>';
+      return;
+    }
+
+    const statusBadge = (s) => {
+      const map = {
+        pending: 'warning',
+        accepted: 'info',
+        in_progress: 'primary',
+        completed: 'success',
+        cancelled: 'danger',
+      };
+      return `<span class="badge bg-${map[s] || 'secondary'}">${s}</span>`;
+    };
+
+    const payBadge = (method, pStatus) => {
+      if (method === 'cash') return '<span class="badge bg-light text-dark border">Cash</span>';
+      if (method === 'midtrans') return `<span class="badge bg-info text-dark">Midtrans${pStatus === 'paid' ? ' ✓' : ''}</span>`;
+      return `<span class="badge bg-light text-muted">${method || '-'}</span>`;
+    };
+
+    const fmtAddr = (addr) => addr ? (addr.length > 28 ? addr.slice(0, 28) + '…' : addr) : '-';
+    const fmtRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+    const fmtTime = (ts) => ts ? new Date(ts).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr>
+        <td class="text-muted small">${start + i}</td>
+        <td><code class="small">${r.booking_code || '-'}</code></td>
+        <td><span class="badge bg-light text-dark border">${r.booking_type || '-'}</span></td>
+        <td>
+          <div class="small fw-medium">${r.customer_name || '-'}</div>
+          <div class="text-muted" style="font-size:.75rem">${r.customer_phone || ''}</div>
+        </td>
+        <td>
+          <div class="small">${r.driver_name || '<span class="text-muted">-</span>'}</div>
+          <div class="text-muted" style="font-size:.75rem">${r.vehicle_type || ''}</div>
+        </td>
+        <td class="small" title="${r.pickup_address || ''}">${fmtAddr(r.pickup_address)}</td>
+        <td class="small" title="${r.dropoff_address || ''}">${fmtAddr(r.dropoff_address)}</td>
+        <td class="text-end small">${r.distance_km ? Number(r.distance_km).toFixed(1) : '-'}</td>
+        <td class="text-end small fw-medium">${fmtRp(r.total_price)}</td>
+        <td>${payBadge(r.payment_method, r.payment_status)}</td>
+        <td>${statusBadge(r.booking_status)}</td>
+        <td class="small text-muted">${fmtTime(r.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('loadTransactionsList error:', err);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="text-center text-danger py-3">${err.message}</td></tr>`;
+  }
+}
+
+// ── End transaction list ─────────────────────────────────────────────────────
 
 function setupFilterForMode(mode) {
   const filter = document.getElementById('statusFilter');
