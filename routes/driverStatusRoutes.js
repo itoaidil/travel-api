@@ -294,8 +294,8 @@ router.get('/dashboard/:driver_id', async (req, res) => {
     // Get earnings breakdown by payment method (lifetime)
     const [paymentBreakdown] = await db.query(
       `SELECT
-        COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN driver_earnings ELSE 0 END), 0) as cash_earnings,
-        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL THEN driver_earnings ELSE 0 END), 0) as digital_earnings
+        COALESCE(SUM(CASE WHEN payment_method = 'cash' AND payment_transaction_id IS NULL THEN driver_earnings ELSE 0 END), 0) as cash_earnings,
+        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL OR payment_transaction_id IS NOT NULL THEN driver_earnings ELSE 0 END), 0) as digital_earnings
       FROM independent_bookings
       WHERE driver_id = ?
         AND booking_status = 'completed'
@@ -306,8 +306,8 @@ router.get('/dashboard/:driver_id', async (req, res) => {
     // Get earnings breakdown by payment method (today)
     const [todayPaymentBreakdown] = await db.query(
       `SELECT
-        COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN driver_earnings ELSE 0 END), 0) as today_cash_earnings,
-        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL THEN driver_earnings ELSE 0 END), 0) as today_digital_earnings
+        COALESCE(SUM(CASE WHEN payment_method = 'cash' AND payment_transaction_id IS NULL THEN driver_earnings ELSE 0 END), 0) as today_cash_earnings,
+        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL OR payment_transaction_id IS NOT NULL THEN driver_earnings ELSE 0 END), 0) as today_digital_earnings
       FROM independent_bookings
       WHERE driver_id = ?
         AND booking_status = 'completed'
