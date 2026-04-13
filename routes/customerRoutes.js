@@ -576,4 +576,150 @@ router.get('/:customer_id', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/customer/forgot-password
+ * Send OTP to email for password reset
+ * Body: { email }
+ */
+router.post('/forgot-password', async (req, res) => {
+  const db = req.db;
+  const { generateOTP, sendOTPEmail } = require('../services/emailService');
+
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email harus diisi' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ success: false, message: 'Format email tidak valid' });
+    }
+
+    // Check if email exists and account is active
+    const [customers] = await db.query(
+      'SELECT id, full_name, is_active FROM customers WHERE email = ? LIMIT 1',
+      [email]
+    );
+
+    if (customers.length === 0) {
+      // Return same message to avoid email enumeration
+      return res.status(200).json({
+        success: true,
+        message: 'Jika email terdaftar, kode OTP akan dikirimkan ke email Anda.'
+      });
+    }
+
+    const customer = customers[0];
+    if (!customer.is_active) {
+      return res.status(400).json({
+        success: false,
+        message: 'Akun belum aktif. Silakan verifikasi email terlebih dahulu.'
+      });
+    }
+
+    // Generate OTP and save with purpose='reset_password'
+    const otpCode = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await db.query(
+      `INSERT INTO otp_verifications (email, otp_code, expires_at, verified, attempts)
+       VALUES (?, ?, ?, 0, 0)`,
+      [email, otpCode, expiresAt]
+    );
+
+    await sendOTPEmail(email, otpCode);
+
+    console.log(`✅ Reset OTP sent to ${email}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Kode OTP telah dikirim ke email Anda. Berlaku 10 menit.'
+    });
+
+  } catch (error) {
+    console.error('❌ Forgot password error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengirim OTP', error: error.message });
+  }
+});
+
+/**
+ * POST /api/customer/reset-password
+ * Verify OTP then update password
+ * Body: { email, otpCode, newPassword }
+ */
+router.post('/reset-password', async (req, res) => {
+  const db = req.db;
+
+  try {
+    const { email, otpCode, newPassword } = req.body;
+
+    if (!email || !otpCode || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Email, kode OTP, dan password baru harus diisi' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password minimal 6 karakter' });
+    }
+
+    // Get latest OTP for this email
+    const [otpRecords] = await db.query(
+      'SELECT * FROM otp_verifications WHERE email = ? ORDER BY created_at DESC LIMIT 1',
+      [email]
+    );
+
+    if (otpRecords.length === 0) {
+      return res.status(400).json({ success: false, message: 'Kode OTP tidak ditemukan. Silakan minta ulang.' });
+    }
+
+    const otp = otpRecords[0];
+
+    if (otp.verified) {
+      return res.status(400).json({ success: false, message: 'Kode OTP sudah digunakan. Silakan minta kode baru.' });
+    }
+
+    if (new Date() > new Date(otp.expires_at)) {
+      return res.status(400).json({ success: false, message: 'Kode OTP sudah kadaluarsa. Silakan minta kode baru.' });
+    }
+
+    if (otp.attempts >= 5) {
+      return res.status(400).json({ success: false, message: 'Terlalu banyak percobaan. Silakan minta kode baru.' });
+    }
+
+    if (otp.otp_code !== String(otpCode)) {
+      await db.query(
+        'UPDATE otp_verifications SET attempts = attempts + 1 WHERE id = ?',
+        [otp.id]
+      );
+      return res.status(400).json({
+        success: false,
+        message: `Kode OTP salah. Sisa percobaan: ${4 - otp.attempts}`
+      });
+    }
+
+    // OTP valid — update password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.query(
+      'UPDATE customers SET password = ? WHERE email = ?',
+      [hashedPassword, email]
+    );
+
+    // Mark OTP as used
+    await db.query(
+      'UPDATE otp_verifications SET verified = 1 WHERE id = ?',
+      [otp.id]
+    );
+
+    console.log(`✅ Password reset for ${email}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Password berhasil direset. Silakan login dengan password baru.'
+    });
+
+  } catch (error) {
+    console.error('❌ Reset password error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal reset password', error: error.message });
+  }
+});
+
 module.exports = router;
