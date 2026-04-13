@@ -296,4 +296,150 @@ router.post('/login', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/driver-auth/forgot-password
+ * Send OTP to driver's registered email based on phone number
+ * Body: { phone }
+ */
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const db = req.db;
+    const { generateOTP, sendOTPEmail } = require('../services/emailService');
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Nomor HP harus diisi' });
+    }
+
+    // Find driver by phone
+    const [rows] = await db.query(
+      `SELECT u.id, u.is_active, d.email, d.full_name
+       FROM users u
+       LEFT JOIN independent_drivers d ON u.id = d.user_id
+       WHERE u.phone = ? AND u.user_type = 'driver'
+       LIMIT 1`,
+      [phone]
+    );
+
+    // Always return 200 to avoid phone enumeration
+    if (rows.length === 0 || !rows[0].email) {
+      return res.status(200).json({
+        success: true,
+        message: 'Jika nomor HP terdaftar, kode OTP akan dikirim ke email Anda.'
+      });
+    }
+
+    const driver = rows[0];
+    const email = driver.email;
+
+    const otpCode = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await db.query(
+      `INSERT INTO otp_verifications (email, otp_code, expires_at, verified, attempts)
+       VALUES (?, ?, ?, 0, 0)`,
+      [email, otpCode, expiresAt]
+    );
+
+    await sendOTPEmail(email, otpCode);
+
+    console.log(`✅ Driver reset OTP sent to ${email} (phone: ${phone})`);
+    return res.status(200).json({
+      success: true,
+      message: 'Kode OTP telah dikirim ke email yang terdaftar. Berlaku 10 menit.',
+      // Return masked email so driver app can show hint
+      maskedEmail: email.replace(/(.{2})(.*)(@.*)/, (_, a, b, c) => a + '*'.repeat(Math.max(b.length, 3)) + c)
+    });
+
+  } catch (error) {
+    console.error('❌ Driver forgot password error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengirim OTP', error: error.message });
+  }
+});
+
+/**
+ * POST /api/driver-auth/reset-password
+ * Verify OTP (sent to email) then update driver password
+ * Body: { phone, otpCode, newPassword }
+ */
+router.post('/reset-password', async (req, res) => {
+  try {
+    const db = req.db;
+    const { phone, otpCode, newPassword } = req.body;
+
+    if (!phone || !otpCode || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Nomor HP, kode OTP, dan password baru harus diisi' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password minimal 6 karakter' });
+    }
+
+    // Get driver's email from phone
+    const [rows] = await db.query(
+      `SELECT u.id as user_id, d.email
+       FROM users u
+       LEFT JOIN independent_drivers d ON u.id = d.user_id
+       WHERE u.phone = ? AND u.user_type = 'driver'
+       LIMIT 1`,
+      [phone]
+    );
+
+    if (rows.length === 0 || !rows[0].email) {
+      return res.status(400).json({ success: false, message: 'Nomor HP tidak ditemukan' });
+    }
+
+    const { user_id, email } = rows[0];
+
+    // Get latest OTP
+    const [otpRecords] = await db.query(
+      'SELECT * FROM otp_verifications WHERE email = ? ORDER BY created_at DESC LIMIT 1',
+      [email]
+    );
+
+    if (otpRecords.length === 0) {
+      return res.status(400).json({ success: false, message: 'Kode OTP tidak ditemukan. Silakan minta ulang.' });
+    }
+
+    const otp = otpRecords[0];
+
+    if (otp.verified) {
+      return res.status(400).json({ success: false, message: 'Kode OTP sudah digunakan. Silakan minta kode baru.' });
+    }
+
+    if (new Date() > new Date(otp.expires_at)) {
+      return res.status(400).json({ success: false, message: 'Kode OTP sudah kadaluarsa. Silakan minta kode baru.' });
+    }
+
+    if (otp.attempts >= 5) {
+      return res.status(400).json({ success: false, message: 'Terlalu banyak percobaan. Silakan minta kode baru.' });
+    }
+
+    if (otp.otp_code !== String(otpCode)) {
+      await db.query('UPDATE otp_verifications SET attempts = attempts + 1 WHERE id = ?', [otp.id]);
+      return res.status(400).json({
+        success: false,
+        message: `Kode OTP salah. Sisa percobaan: ${4 - otp.attempts}`
+      });
+    }
+
+    // Update password in users table
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, user_id]);
+
+    // Mark OTP as used
+    await db.query('UPDATE otp_verifications SET verified = 1 WHERE id = ?', [otp.id]);
+
+    console.log(`✅ Driver password reset for phone: ${phone}`);
+    return res.status(200).json({
+      success: true,
+      message: 'Password berhasil direset. Silakan login dengan password baru.'
+    });
+
+  } catch (error) {
+    console.error('❌ Driver reset password error:', error);
+    return res.status(500).json({ success: false, message: 'Gagal reset password', error: error.message });
+  }
+});
+
 module.exports = router;
