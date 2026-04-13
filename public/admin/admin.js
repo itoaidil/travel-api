@@ -149,6 +149,7 @@ function switchView(view) {
   if (view === 'dashboard') {
     document.getElementById('moduleTitle').textContent = 'Dashboard';
     loadDashboardStats();
+    initTxListPanel();
     return;
   }
 
@@ -344,7 +345,6 @@ async function loadDashboardStats() {
 
     renderHeartbeatDashboard(heartbeatSummary);
     renderTodayBookingDashboard(bookingsToday);
-    initTxListPanel();
   } catch (error) {
     console.error('Error loading dashboard stats:', error);
     showError('Failed to load dashboard');
