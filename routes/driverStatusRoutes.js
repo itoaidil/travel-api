@@ -291,6 +291,31 @@ router.get('/dashboard/:driver_id', async (req, res) => {
       [driver_id]
     );
 
+    // Get earnings breakdown by payment method (lifetime)
+    const [paymentBreakdown] = await db.query(
+      `SELECT
+        COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN driver_earnings ELSE 0 END), 0) as cash_earnings,
+        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL THEN driver_earnings ELSE 0 END), 0) as digital_earnings
+      FROM independent_bookings
+      WHERE driver_id = ?
+        AND booking_status = 'completed'
+        AND driver_earnings IS NOT NULL`,
+      [driver_id]
+    );
+
+    // Get earnings breakdown by payment method (today)
+    const [todayPaymentBreakdown] = await db.query(
+      `SELECT
+        COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN driver_earnings ELSE 0 END), 0) as today_cash_earnings,
+        COALESCE(SUM(CASE WHEN payment_method <> 'cash' OR payment_method IS NULL THEN driver_earnings ELSE 0 END), 0) as today_digital_earnings
+      FROM independent_bookings
+      WHERE driver_id = ?
+        AND booking_status = 'completed'
+        AND DATE(completed_at) = CURDATE()
+        AND driver_earnings IS NOT NULL`,
+      [driver_id]
+    );
+
     // Get active bookings count
     const [activeBookings] = await db.query(
       `SELECT 
@@ -323,8 +348,14 @@ router.get('/dashboard/:driver_id', async (req, res) => {
 
     const dashboard = {
       total_earnings: parseFloat(totalEarnings[0].total_earnings) || 0,
+      cash_earnings: parseFloat(paymentBreakdown[0].cash_earnings) || 0,
+      digital_earnings: parseFloat(paymentBreakdown[0].digital_earnings) || 0,
       total_trips: parseInt(totalEarnings[0].total_trips) || 0,
       today_earnings: parseFloat(todayEarnings[0].today_earnings) || 0,
+      today_cash_earnings:
+        parseFloat(todayPaymentBreakdown[0].today_cash_earnings) || 0,
+      today_digital_earnings:
+        parseFloat(todayPaymentBreakdown[0].today_digital_earnings) || 0,
       today_trips: parseInt(todayEarnings[0].today_trips) || 0,
       active_bookings: parseInt(activeBookings[0].accepted_count) || 0,
       recent_trips: recentTrips
