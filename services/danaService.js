@@ -102,20 +102,25 @@ function normalizePrivateKey(rawKey) {
       if (decoded.includes('-----BEGIN')) {
         key = decoded;
       } else {
-        // Raw base64 DER format - wrap with PEM headers
+        // Detect key type from DER header bytes to use correct PEM wrapper:
+        // PKCS#8 starts with 30 82 xx xx 02 01 00 30 (sequence + version 0 + AlgorithmIdentifier)
+        // PKCS#1 RSA starts with 30 82 xx xx 02 01 00 02 (sequence + version 0 + modulus integer)
+        const rawBuf = Buffer.from(key.replace(/\s+/g, ''), 'base64');
+        // MIIEvAIBADANBgkqhkiG... → byte[4]=0x02, byte[5]=0x01, byte[6]=0x00, byte[7]=0x30 (PKCS#8 has OID sequence)
+        const isPkcs8 = rawBuf.length > 8 && rawBuf[7] === 0x30;
+        const pemHeader = isPkcs8 ? '-----BEGIN PRIVATE KEY-----' : '-----BEGIN RSA PRIVATE KEY-----';
+        const pemFooter = isPkcs8 ? '-----END PRIVATE KEY-----' : '-----END RSA PRIVATE KEY-----';
         const base64Content = key.replace(/\s+/g, '');
         const lines = base64Content.match(/.{1,64}/g) || [];
-        key = '-----BEGIN RSA PRIVATE KEY-----\n' + 
-              lines.join('\n') + '\n' +
-              '-----END RSA PRIVATE KEY-----';
+        key = pemHeader + '\n' + lines.join('\n') + '\n' + pemFooter;
       }
     } catch (error) {
-      console.warn('⚠️  Unable to process DANA private key, wrapping as PEM');
+      console.warn('⚠️  Unable to process DANA private key, wrapping as PKCS#8 PEM');
       const base64Content = key.replace(/\s+/g, '');
       const lines = base64Content.match(/.{1,64}/g) || [];
-      key = '-----BEGIN RSA PRIVATE KEY-----\n' + 
+      key = '-----BEGIN PRIVATE KEY-----\n' + 
             lines.join('\n') + '\n' +
-            '-----END RSA PRIVATE KEY-----';
+            '-----END PRIVATE KEY-----';
     }
   }
 
@@ -582,7 +587,7 @@ async function createDisbursement(withdrawalData) {
                         error.danaMeta?.message ||
                         error.message;
     const statusCode = error.danaMeta?.httpStatus || error.response?.status;
-    const endpointPath = error.danaMeta?.endpoint || relativePath;
+    const endpointPath = error.danaMeta?.endpoint || '/v1.0/emoney/transfer-bank.htm';
     const rawFailureData = error.danaMeta?.raw || error.response?.data || error.message;
     const failureReason = buildFailureReason({
       stage: error.danaMeta?.stage || 'request_send',
