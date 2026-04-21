@@ -290,82 +290,55 @@ async function createDisbursement(withdrawalData) {
     // Get bank code for beneficiary
     const beneficiaryBankCode = getBankCode(withdrawalData.bank_name);
     
-    // customerNumber = DANA customer account for the disbursement source
-    // Format must be 628xxx (Indonesia mobile phone format)
-    // Use configured DANA_CUSTOMER_NUMBER or default to merchant's customer number
-    let customerNumber = process.env.DANA_CUSTOMER_NUMBER || '085128031956';
-    
-    // Format to 628xxx if needed
-    customerNumber = customerNumber.replace(/\D/g, ''); // Remove non-digits
-    if (customerNumber.startsWith('0')) {
-      customerNumber = `62${customerNumber.slice(1)}`;
-    } else if (customerNumber.startsWith('8')) {
-      customerNumber = `62${customerNumber}`;
-    }
-    
-    if (!/^628\d+$/.test(customerNumber)) {
-      throw new Error(`Invalid customerNumber format: ${customerNumber} (must be 628xxx)`);
-    }
-    
-    console.log(`💼 Using DANA customerNumber: ${customerNumber}`);
-    
     // Format amount with .00 (DANA requirement)
     const amountValue = parseFloat(withdrawalData.amount).toFixed(2);
     
     const beneficiaryAccountNumber = (
-      process.env.DANA_BENEFICIARY_ACCOUNT_NUMBER ||
-      withdrawalData.bank_account_number ||
-      ''
+      withdrawalData.bank_account_number || ''
     ).toString().replace(/\s+/g, '');
 
     if (!beneficiaryAccountNumber) {
       throw new Error('Missing beneficiary account number for DANA transfer');
     }
 
-    const beneficiaryAccountName = (withdrawalData.bank_account_holder || '').toString().trim();
-
-    // Build additionalInfo - only include fields that are configured
+    // Build additionalInfo - sesuai sample resmi DANA API docs
+    // https://dashboard.dana.id/api-docs-v2/api/disbursement/transfer-to-bank
+    // beneficiaryAccountName dihilangkan karena bisa menyebabkan mismatch validation
     const additionalInfo = {
       fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
-      needNotify: (process.env.DANA_NEED_NOTIFY || 'true').toString(),
-      beneficiaryAccountName: beneficiaryAccountName || undefined
+      needNotify: 'true'
     };
-    
-    // Only add chargeTarget and externalDivisionId if explicitly configured
-    // By default, chargeTarget: MERCHANT (does NOT require externalDivisionId)
-    const chargeTarget = process.env.DANA_CHARGE_TARGET || 'MERCHANT';
-    if (chargeTarget) {
-      additionalInfo.chargeTarget = chargeTarget;
-    }
-    
-    // Only add externalDivisionId if configured AND chargeTarget is DIVISION
-    if (process.env.DANA_EXTERNAL_DIVISION_ID && chargeTarget === 'DIVISION') {
-      additionalInfo.externalDivisionId = process.env.DANA_EXTERNAL_DIVISION_ID;
+
+    // chargeTarget: optional (null | DIVISION | MERCHANT)
+    // Only add if explicitly set in env
+    if (process.env.DANA_CHARGE_TARGET) {
+      additionalInfo.chargeTarget = process.env.DANA_CHARGE_TARGET;
+      // externalDivisionId only required if chargeTarget = DIVISION
+      if (process.env.DANA_CHARGE_TARGET === 'DIVISION' && process.env.DANA_EXTERNAL_DIVISION_ID) {
+        additionalInfo.externalDivisionId = process.env.DANA_EXTERNAL_DIVISION_ID;
+      }
     }
 
-    // Prepare disbursement payload aligned with DANA transfer-to-bank guide
+    // Payload sesuai sample resmi DANA docs:
+    // partnerReferenceNo, beneficiaryAccountNumber, beneficiaryBankCode, amount, additionalInfo
+    // customerNumber dan accountType TIDAK ada di sample resmi
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
-      customerNumber: customerNumber,  // ✅ Phone format 628xxxx
-      accountType: process.env.DANA_ACCOUNT_TYPE || 'SETTLEMENT_ACCOUNT',
       beneficiaryAccountNumber: beneficiaryAccountNumber,
       beneficiaryBankCode: beneficiaryBankCode,
       amount: {
-        value: amountValue,  // ✅ With .00 format
+        value: amountValue,
         currency: 'IDR'
       },
       additionalInfo: additionalInfo
     };
 
-    // DANA API endpoint - latest spec
-    // POST /v1.0/emoney/transfer-bank.htm
+    // DANA API endpoint
     let baseUrl = process.env.DANA_BASE_URL || 'https://api.sandbox.dana.id';
-    baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
-    
-    // Per DANA IT: use v1.0 as primary
+    baseUrl = baseUrl.replace(/\/$/, '');
+
     const endpoints = [
-      { url: `${baseUrl}/v1.0/emoney/transfer-bank.htm`, path: '/v1.0/emoney/transfer-bank.htm' },
-      { url: `${baseUrl}/v1/emoney/transfer-bank.htm`, path: '/v1/emoney/transfer-bank.htm' }
+      { url: `${baseUrl}/v1.0/emoney/transfer-bank.htm`, path: '/v1.0/emoney/transfer-bank.htm' }
     ];
 
     // Build headers with SNAP signature
