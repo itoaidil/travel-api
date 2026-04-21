@@ -301,13 +301,18 @@ async function createDisbursement(withdrawalData) {
       throw new Error('Missing beneficiary account number for DANA transfer');
     }
 
-    // Build additionalInfo - sesuai sample resmi DANA API docs
-    // https://dashboard.dana.id/api-docs-v2/api/disbursement/transfer-to-bank
-    // beneficiaryAccountName dihilangkan karena bisa menyebabkan mismatch validation
-    const additionalInfo = {
-      fundType: 'MERCHANT_WITHDRAW_FOR_CORPORATE',
-      needNotify: 'true'
-    };
+    // Build additionalInfo - minimal payload untuk sandbox testing
+    // fundType: env variable DANA_FUND_TYPE (default: MERCHANT_WITHDRAW_FOR_CORPORATE)
+    // Bisa di-override via env jika merchant tidak support fund type tertentu
+    const fundType = process.env.DANA_FUND_TYPE || 'MERCHANT_WITHDRAW_FOR_CORPORATE';
+    const additionalInfo = {};
+
+    // Hanya tambah fundType jika bukan 'NONE' (untuk testing tanpa additionalInfo)
+    if (fundType !== 'NONE') {
+      additionalInfo.fundType = fundType;
+    }
+
+    additionalInfo.needNotify = 'true';
 
     // chargeTarget: optional (null | DIVISION | MERCHANT)
     // Only add if explicitly set in env
@@ -321,7 +326,6 @@ async function createDisbursement(withdrawalData) {
 
     // Payload sesuai sample resmi DANA docs:
     // partnerReferenceNo, beneficiaryAccountNumber, beneficiaryBankCode, amount, additionalInfo
-    // customerNumber dan accountType TIDAK ada di sample resmi
     const payload = {
       partnerReferenceNo: partnerReferenceNo,
       beneficiaryAccountNumber: beneficiaryAccountNumber,
