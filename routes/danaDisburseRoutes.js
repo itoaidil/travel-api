@@ -106,29 +106,32 @@ router.post('/dana-disburse-callback', async (req, res) => {
     }
     
     // Extract data from DANA payload
-    const {
-      partnerReferenceNo,    // Our withdrawal ID
-      amount,
-      disbursementStatus,    // SUCCESS, FAILED, PROCESSING
-      disbursementId,        // DANA transaction ID
-      disbursementTime,
-      additionalInfo,
-      failureReason
-    } = req.body;
+    // DANA SNAP callback uses: originalPartnerReferenceNo + transactionStatusDesc
+    // Legacy format uses: partnerReferenceNo + disbursementStatus
+    const partnerReferenceNo = req.body.originalPartnerReferenceNo || req.body.partnerReferenceNo;
+    const disbursementStatus = req.body.transactionStatusDesc || req.body.disbursementStatus;
+    const disbursementId = req.body.originalReferenceNo || req.body.referenceNo || req.body.disbursementId;
+    const amount = req.body.amount;
+    const disbursementTime = req.body.finishedTime || req.body.disbursementTime;
+    const additionalInfo = req.body.additionalInfo;
+    const failureReason = req.body.failureReason || req.body.transactionStatusDesc;
+
+    console.log(`📌 Extracted - partnerRef: ${partnerReferenceNo}, status: ${disbursementStatus}, disbursementId: ${disbursementId}`);
 
     // Validate required fields
     if (!partnerReferenceNo || !disbursementStatus) {
-      console.error('❌ Missing required fields');
+      console.error('❌ Missing required fields - partnerReferenceNo:', partnerReferenceNo, 'disbursementStatus:', disbursementStatus);
+      console.error('❌ Full body:', JSON.stringify(req.body));
       return res.status(400).json({
         responseCode: '4000000',
         responseMessage: 'Missing required fields'
       });
     }
     
-    // ✅ WICHTIG: Only process callbacks with valid DANA statuses
-    // Expected: SUCCESS, FAILED, PROCESSING, or "Request In Progress"
-    const validStatuses = ['SUCCESS', 'FAILED', 'PROCESSING', 'Request In Progress', 'PENDING'];
-    if (!validStatuses.includes(disbursementStatus)) {
+    // Normalize status: DANA SNAP uses "Success"/"Failed", old format uses "SUCCESS"/"FAILED"
+    const normalizedStatus = disbursementStatus.toUpperCase();
+    const validStatuses = ['SUCCESS', 'FAILED', 'PROCESSING', 'REQUEST IN PROGRESS', 'PENDING'];
+    if (!validStatuses.includes(normalizedStatus)) {
       console.warn(`⚠️  Ignoring callback with status: ${disbursementStatus} (not in valid list)`);
       return res.status(400).json({
         responseCode: '4000000',
@@ -170,10 +173,10 @@ router.post('/dana-disburse-callback', async (req, res) => {
 
     const withdrawal = withdrawals[0];
 
-    // Map DANA status to our internal status
-    const newStatus = mapDanaStatus(disbursementStatus);
+    // Map DANA status to our internal status (use normalizedStatus for consistent mapping)
+    const newStatus = mapDanaStatus(normalizedStatus);
     
-    console.log(`📊 Status mapping: ${disbursementStatus} → ${newStatus}`);
+    console.log(`📊 Status mapping: ${disbursementStatus} (normalized: ${normalizedStatus}) → ${newStatus}`);
 
     // Prepare update query based on status
     let updateQuery = '';
