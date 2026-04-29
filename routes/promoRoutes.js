@@ -170,4 +170,46 @@ router.post('/seed', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/promo/service-badges
+ * Returns badge labels and colors for each service menu item on the dashboard.
+ * Admin can update these via direct DB edit or admin panel without app rebuild.
+ *
+ * Response:
+ *   { success: true, badges: { antar_paket: { label: 'DISKON 70%', color: 'BF1E2E' }, ... } }
+ */
+router.get('/service-badges', async (req, res) => {
+  const db = req.db;
+  if (!db) {
+    return res.status(503).json({ success: false, message: 'Database unavailable' });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `SELECT service_key, badge_label, badge_color
+       FROM service_menu_badges
+       WHERE is_active = 1
+       ORDER BY sort_order ASC`
+    );
+
+    // Transform array to map: { service_key: { label, color } }
+    const badges = {};
+    for (const row of rows) {
+      badges[row.service_key] = {
+        label: row.badge_label,
+        color: row.badge_color,
+      };
+    }
+
+    return res.json({ success: true, badges });
+  } catch (error) {
+    // Graceful degradation: if table doesn't exist yet, return empty
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.json({ success: true, badges: {} });
+    }
+    console.error('GET /api/promo/service-badges error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 module.exports = router;
