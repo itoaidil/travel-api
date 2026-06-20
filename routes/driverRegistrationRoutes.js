@@ -141,12 +141,15 @@ router.post('/register', async (req, res) => {
     const plainPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
+    // Generate unique username from phone (always unique since phone is validated above)
+    const uniqueUsername = phone;
+
     // 1. Create user account first
     const [userResult] = await db.query(
       `INSERT INTO users (
         username, email, phone, password, user_type, is_active, created_at, updated_at
       ) VALUES (?, ?, ?, ?, 'driver', 0, NOW(), NOW())`,
-      [fullName, email, phone, hashedPassword]
+      [uniqueUsername, email, phone, hashedPassword]
     );
 
     const userId = userResult.insertId;
