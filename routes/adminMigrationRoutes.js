@@ -703,25 +703,17 @@ router.post('/migrate-020', async (req, res) => {
 
 /**
  * POST /api/admin/migrate-021
- * Tambah kolom nama_kelurahan ke tabel batch_deliveries
+ * Tambah/reposisi kolom nama_kelurahan ke setelah nomor_hp_pic di batch_deliveries
  */
 router.post('/migrate-021', async (req, res) => {
   try {
-    // Cek dulu apakah kolom sudah ada
-    const [cols] = await db.query(
-      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'batch_deliveries' AND COLUMN_NAME = 'nama_kelurahan'`
-    );
-    if (cols.length > 0) {
-      return res.json({ success: true, message: 'Kolom nama_kelurahan sudah ada, tidak perlu migrasi' });
-    }
     await db.query(`
       ALTER TABLE batch_deliveries
-      ADD COLUMN nama_kelurahan VARCHAR(100) NULL
+      MODIFY COLUMN nama_kelurahan VARCHAR(100) NULL
         COMMENT 'Nama kelurahan tujuan'
-        AFTER nama_kecamatan
+        AFTER nomor_hp_pic
     `);
-    return res.json({ success: true, message: 'Migration 021 selesai: kolom nama_kelurahan ditambahkan ke batch_deliveries' });
+    return res.json({ success: true, message: 'Migration 021: kolom nama_kelurahan dipindah ke setelah nomor_hp_pic' });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Migration 021 gagal', error: error.message });
   }
