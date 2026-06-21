@@ -162,6 +162,81 @@ async function ensureBatchDeliveryPicColumns(db) {
 }
 
 /**
+ * POST /api/batch-delivery/update-bulk
+ * Bulk update kolom: lat, lng, status, nama_kecamatan, nama_kabupaten,
+ * nama_pic_penerima, nomor_hp_pic, nama_kelurahan.
+ * lat/lng diambil dari expedition_master_districts berdasarkan kode_kecamatan.
+ * Body: { packages: [{ npp, kode_kecamatan, nama_kecamatan, nama_kabupaten,
+ *                      nama_kelurahan, nama_pic_penerima, nomor_hp_pic }] }
+ */
+router.post('/update-bulk', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const { packages } = req.body;
+    if (!packages || !Array.isArray(packages) || packages.length === 0) {
+      return res.status(400).json({ success: false, message: 'packages array is required' });
+    }
+
+    // Cache lat/lng per kode_kecamatan
+    const districtCache = {};
+    const getLatLng = async (kode) => {
+      if (!kode) return { lat: 0, lng: 0 };
+      if (districtCache[kode]) return districtCache[kode];
+      try {
+        const [rows] = await db.query(
+          'SELECT latitude, longitude FROM expedition_master_districts WHERE code = ? LIMIT 1',
+          [String(kode)]
+        );
+        const result = rows.length ? { lat: rows[0].latitude || 0, lng: rows[0].longitude || 0 } : { lat: 0, lng: 0 };
+        districtCache[kode] = result;
+        return result;
+      } catch { return { lat: 0, lng: 0 }; }
+    };
+
+    let updated = 0;
+    let notFound = 0;
+
+    for (const pkg of packages) {
+      if (!pkg.npp) continue;
+      const { lat, lng } = await getLatLng(pkg.kode_kecamatan);
+
+      const [result] = await db.query(
+        `UPDATE batch_deliveries SET
+          lat              = ?,
+          lng              = ?,
+          status           = 'pending',
+          nama_kecamatan   = ?,
+          nama_kabupaten   = ?,
+          nama_pic_penerima = ?,
+          nomor_hp_pic     = ?,
+          nama_kelurahan   = ?
+        WHERE npp = ?`,
+        [
+          lat,
+          lng,
+          pkg.nama_kecamatan || null,
+          pkg.nama_kabupaten || null,
+          pkg.nama_pic_penerima || null,
+          pkg.nomor_hp_pic || null,
+          pkg.nama_kelurahan || null,
+          String(pkg.npp),
+        ]
+      );
+
+      if (result.affectedRows > 0) updated++;
+      else notFound++;
+    }
+
+    return res.json({ success: true, data: { updated, not_found: notFound } });
+  } catch (error) {
+    console.error('[update-bulk]', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST /api/batch-delivery/import
  * Bulk insert geocoded addresses into batch_deliveries table.
  * Body: { packages: [{ no, npp, address, lat, lng }] }
