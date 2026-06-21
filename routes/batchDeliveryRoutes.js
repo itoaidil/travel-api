@@ -162,6 +162,34 @@ async function ensureBatchDeliveryPicColumns(db) {
 }
 
 /**
+ * POST /api/batch-delivery/update-latlng
+ * Update lat/lng untuk daftar NPP sekaligus.
+ * Body: { packages: [{ npp, lat, lng }] }
+ */
+router.post('/update-latlng', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+  try {
+    const { packages } = req.body;
+    if (!packages || !Array.isArray(packages) || packages.length === 0) {
+      return res.status(400).json({ success: false, message: 'packages array required' });
+    }
+    let updated = 0;
+    for (const pkg of packages) {
+      if (!pkg.npp) continue;
+      const [r] = await db.query(
+        'UPDATE batch_deliveries SET lat = ?, lng = ? WHERE npp = ?',
+        [parseFloat(pkg.lat) || 0, parseFloat(pkg.lng) || 0, String(pkg.npp)]
+      );
+      if (r.affectedRows > 0) updated++;
+    }
+    return res.json({ success: true, data: { updated } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST /api/batch-delivery/update-bulk
  * Bulk update kolom: lat, lng, status, nama_kecamatan, nama_kabupaten,
  * nama_pic_penerima, nomor_hp_pic, nama_kelurahan.
