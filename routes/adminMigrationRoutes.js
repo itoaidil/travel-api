@@ -701,5 +701,23 @@ router.post('/migrate-020', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/migrate-021
+ * Tambah kolom nama_kelurahan ke tabel batch_deliveries
+ */
+router.post('/migrate-021', async (req, res) => {
+  try {
+    await db.query(`
+      ALTER TABLE batch_deliveries
+      ADD COLUMN IF NOT EXISTS nama_kelurahan VARCHAR(100) NULL
+        COMMENT 'Nama kelurahan tujuan'
+        AFTER nama_kecamatan
+    `);
+    return res.json({ success: true, message: 'Migration 021 selesai: kolom nama_kelurahan ditambahkan ke batch_deliveries' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Migration 021 gagal', error: error.message });
+  }
+});
+
 module.exports = router;
 
