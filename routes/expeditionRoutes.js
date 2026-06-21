@@ -1629,4 +1629,81 @@ router.get('/admin/seed-wilayah/status', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/expedition/admin/import-villages
+ * Bulk upsert kelurahan/desa ke expedition_master_villages.
+ * Body: { villages: [{ code, district_code, name }] }
+ * Max 1000 per request.
+ */
+router.post('/admin/import-villages', async (req, res) => {
+  if (!isExpeditionAdminAuthorized(req)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  try {
+    const db = req.db;
+    if (!db) return res.status(503).json({ success: false, message: 'Database unavailable' });
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS expedition_master_villages (
+        code VARCHAR(20) PRIMARY KEY,
+        district_code VARCHAR(20) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_vill_district (district_code),
+        INDEX idx_vill_active (is_active)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    const { villages } = req.body;
+    if (!villages || !Array.isArray(villages) || villages.length === 0) {
+      return res.status(400).json({ success: false, message: 'villages array is required' });
+    }
+    if (villages.length > 1000) {
+      return res.status(400).json({ success: false, message: 'Max 1000 villages per request' });
+    }
+
+    const values = villages
+      .filter(v => v.code && v.district_code && v.name)
+      .map(v => [String(v.code), String(v.district_code), String(v.name).trim(), 1]);
+
+    if (values.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid village data' });
+    }
+
+    const placeholders = values.map(() => '(?,?,?,?)').join(',');
+    const flat = values.flat();
+    await db.query(
+      `INSERT INTO expedition_master_villages (code, district_code, name, is_active)
+       VALUES ${placeholders}
+       ON DUPLICATE KEY UPDATE name = VALUES(name), district_code = VALUES(district_code), updated_at = NOW()`,
+      flat
+    );
+
+    return res.json({ success: true, data: { inserted: values.length } });
+  } catch (error) {
+    console.error('[import-villages]', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/expedition/admin/villages-status
+ * Cek jumlah kelurahan di database.
+ */
+router.get('/admin/villages-status', async (req, res) => {
+  if (!isExpeditionAdminAuthorized(req)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+  try {
+    const db = req.db;
+    const [[{ total }]] = await db.query('SELECT COUNT(*) AS total FROM expedition_master_villages');
+    return res.json({ success: true, data: { villages: total } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
