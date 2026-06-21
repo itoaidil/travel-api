@@ -707,9 +707,17 @@ router.post('/migrate-020', async (req, res) => {
  */
 router.post('/migrate-021', async (req, res) => {
   try {
+    // Cek dulu apakah kolom sudah ada
+    const [cols] = await db.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'batch_deliveries' AND COLUMN_NAME = 'nama_kelurahan'`
+    );
+    if (cols.length > 0) {
+      return res.json({ success: true, message: 'Kolom nama_kelurahan sudah ada, tidak perlu migrasi' });
+    }
     await db.query(`
       ALTER TABLE batch_deliveries
-      ADD COLUMN IF NOT EXISTS nama_kelurahan VARCHAR(100) NULL
+      ADD COLUMN nama_kelurahan VARCHAR(100) NULL
         COMMENT 'Nama kelurahan tujuan'
         AFTER nama_kecamatan
     `);
