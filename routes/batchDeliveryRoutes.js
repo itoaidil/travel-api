@@ -1198,6 +1198,303 @@ router.get('/:id/route', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
+// KECAMATAN KABUPATEN TANGERANG (29 kecamatan)
+// ─────────────────────────────────────────────
+const KECAMATAN_KAB_TANGERANG = [
+  'Balaraja', 'Cisauk', 'Cisoka', 'Cikupa', 'Curug',
+  'Jambe', 'Jayanti', 'Kelapa Dua', 'Kemiri', 'Kosambi',
+  'Kronjo', 'Kresek', 'Legok', 'Mauk', 'Mekar Baru',
+  'Pagedangan', 'Pakuhaji', 'Panongan', 'Pasar Kemis', 'Rajeg',
+  'Sepatan', 'Sepatan Timur', 'Sindang Jaya', 'Solear',
+  'Sukadiri', 'Sukamulya', 'Tigaraksa', 'Teluknaga', 'Gunung Kaler'
+];
+
+// Helper: auto-create batch_delivery_jobs table
+async function ensureBatchJobsTable(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS batch_delivery_jobs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      pickup_name VARCHAR(255) NOT NULL,
+      pickup_address TEXT NOT NULL,
+      notes TEXT,
+      batch_ids JSON,
+      kecamatan_list JSON,
+      status ENUM('open','accepted','completed','cancelled') DEFAULT 'open',
+      driver_id INT DEFAULT NULL,
+      accepted_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_status (status),
+      INDEX idx_driver (driver_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+}
+
+/**
+ * POST /api/batch-delivery/broadcast-job
+ * Admin broadcast job ke driver berdasarkan kecamatan (Opsi B — tanpa ubah schema driver)
+ * Body: { pickup_name, pickup_address, notes, batch_ids, kecamatan_list, secret }
+ * Jika kecamatan_list kosong → otomatis pakai 29 kecamatan Kabupaten Tangerang
+ */
+router.post('/broadcast-job', async (req, res) => {
+  const db = req.db;
+  const {
+    pickup_name, pickup_address, notes = '',
+    batch_ids = [], kecamatan_list, secret
+  } = req.body;
+
+  const expectedSecret = process.env.BROADCAST_SECRET || 'hantar_admin';
+  if (secret !== expectedSecret) {
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
+  }
+  if (!pickup_name || !pickup_address) {
+    return res.status(400).json({ success: false, message: 'pickup_name dan pickup_address wajib diisi' });
+  }
+
+  try {
+    await ensureBatchJobsTable(db);
+
+    const targetKecamatan = (Array.isArray(kecamatan_list) && kecamatan_list.length > 0)
+      ? kecamatan_list
+      : KECAMATAN_KAB_TANGERANG;
+
+    // Buat record job
+    const [jobResult] = await db.query(
+      `INSERT INTO batch_delivery_jobs 
+        (pickup_name, pickup_address, notes, batch_ids, kecamatan_list, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'open', NOW(), NOW())`,
+      [pickup_name, pickup_address, notes,
+       JSON.stringify(batch_ids), JSON.stringify(targetKecamatan)]
+    );
+    const jobId = jobResult.insertId;
+
+    // Cari driver aktif di kecamatan tersebut yang punya FCM token
+    const placeholders = targetKecamatan.map(() => '?').join(',');
+    const [drivers] = await db.query(
+      `SELECT id, full_name, fcm_token 
+       FROM independent_drivers 
+       WHERE kecamatan IN (${placeholders})
+         AND status = 'active'
+         AND is_verified = 1`,
+      targetKecamatan
+    );
+
+    const admin = require('firebase-admin');
+    let pushSent = 0;
+    let notifInserted = 0;
+    const invalidTokens = [];
+
+    const notifTitle = `📦 Ada Paket Siap Diambil!`;
+    const notifBody = `Pickup di: ${pickup_name}. Klik untuk lihat detail.`;
+
+    for (const driver of drivers) {
+      // Simpan ke driver_notifications (bell in-app)
+      try {
+        await db.query(
+          `INSERT INTO driver_notifications 
+            (driver_id, type, title, message, data, is_read, created_at)
+           VALUES (?, 'batch_job', ?, ?, ?, 0, NOW())`,
+          [driver.id, notifTitle, notifBody,
+           JSON.stringify({ job_id: jobId, pickup_name, pickup_address })]
+        );
+        notifInserted++;
+      } catch (_) {}
+
+      // Kirim FCM push notification
+      if (driver.fcm_token) {
+        try {
+          await admin.messaging().send({
+            token: driver.fcm_token,
+            data: {
+              type: 'batch_job',
+              job_id: String(jobId),
+              title: notifTitle,
+              body: notifBody,
+              pickup_name,
+              pickup_address,
+            },
+            android: {
+              priority: 'high',
+              notification: { channelId: 'driver_channel', sound: 'default' },
+            },
+          });
+          pushSent++;
+        } catch (err) {
+          const code = err?.errorInfo?.code || err?.code || '';
+          if (
+            code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-registration-token'
+          ) {
+            invalidTokens.push(driver.fcm_token);
+          }
+        }
+      }
+    }
+
+    // Bersihkan token tidak valid
+    if (invalidTokens.length) {
+      const ph = invalidTokens.map(() => '?').join(',');
+      await db.query(
+        `UPDATE independent_drivers SET fcm_token = NULL WHERE fcm_token IN (${ph})`,
+        invalidTokens
+      ).catch(() => {});
+    }
+
+    console.log(`📢 Broadcast job #${jobId}: drivers=${drivers.length}, pushSent=${pushSent}, notifInserted=${notifInserted}`);
+    return res.json({
+      success: true,
+      job_id: jobId,
+      drivers_found: drivers.length,
+      push_sent: pushSent,
+      notif_inserted: notifInserted,
+      kecamatan_count: targetKecamatan.length,
+    });
+
+  } catch (err) {
+    console.error('❌ broadcast-job error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /api/batch-delivery/available-jobs/:driverId
+ * Driver lihat job yang tersedia (status open) di kecamatan mereka
+ */
+router.get('/available-jobs/:driverId', async (req, res) => {
+  const db = req.db;
+  const { driverId } = req.params;
+
+  try {
+    await ensureBatchJobsTable(db);
+
+    // Ambil kecamatan driver
+    const [driverRows] = await db.query(
+      'SELECT id, full_name, kecamatan FROM independent_drivers WHERE id = ?',
+      [driverId]
+    );
+    if (!driverRows.length) {
+      return res.status(404).json({ success: false, message: 'Driver tidak ditemukan' });
+    }
+    const driver = driverRows[0];
+
+    // Cari job open yang kecamatan driver ada di kecamatan_list job
+    const [jobs] = await db.query(
+      `SELECT id, pickup_name, pickup_address, notes, batch_ids, kecamatan_list, status, created_at
+       FROM batch_delivery_jobs
+       WHERE status = 'open'
+       ORDER BY created_at DESC
+       LIMIT 20`
+    );
+
+    // Filter: job yang include kecamatan driver
+    const availableJobs = jobs.filter(job => {
+      try {
+        const list = typeof job.kecamatan_list === 'string'
+          ? JSON.parse(job.kecamatan_list)
+          : job.kecamatan_list;
+        return Array.isArray(list) && list.includes(driver.kecamatan);
+      } catch (_) { return false; }
+    });
+
+    return res.json({
+      success: true,
+      driver: { id: driver.id, full_name: driver.full_name, kecamatan: driver.kecamatan },
+      jobs: availableJobs,
+      total: availableJobs.length,
+    });
+
+  } catch (err) {
+    console.error('❌ available-jobs error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /api/batch-delivery/accept-job
+ * Driver terima job — assign job ke driver
+ * Body: { driver_id, job_id }
+ */
+router.post('/accept-job', async (req, res) => {
+  const db = req.db;
+  const { driver_id, job_id } = req.body;
+
+  if (!driver_id || !job_id) {
+    return res.status(400).json({ success: false, message: 'driver_id dan job_id wajib diisi' });
+  }
+
+  try {
+    await ensureBatchJobsTable(db);
+
+    // Cek job masih open
+    const [jobRows] = await db.query(
+      'SELECT * FROM batch_delivery_jobs WHERE id = ? FOR UPDATE',
+      [job_id]
+    );
+    if (!jobRows.length) {
+      return res.status(404).json({ success: false, message: 'Job tidak ditemukan' });
+    }
+    const job = jobRows[0];
+    if (job.status !== 'open') {
+      return res.status(409).json({
+        success: false,
+        message: `Job sudah ${job.status === 'accepted' ? 'diambil driver lain' : job.status}`,
+      });
+    }
+
+    // Assign ke driver
+    await db.query(
+      `UPDATE batch_delivery_jobs 
+       SET status = 'accepted', driver_id = ?, accepted_at = NOW(), updated_at = NOW()
+       WHERE id = ? AND status = 'open'`,
+      [driver_id, job_id]
+    );
+
+    // Cek apakah berhasil (race condition guard)
+    const [updated] = await db.query(
+      'SELECT driver_id FROM batch_delivery_jobs WHERE id = ?',
+      [job_id]
+    );
+    if (!updated.length || updated[0].driver_id != driver_id) {
+      return res.status(409).json({ success: false, message: 'Job baru saja diambil driver lain' });
+    }
+
+    // Update batch_deliveries: assign driver ke paket
+    if (job.batch_ids) {
+      try {
+        const batchIds = typeof job.batch_ids === 'string'
+          ? JSON.parse(job.batch_ids)
+          : job.batch_ids;
+        if (Array.isArray(batchIds) && batchIds.length > 0) {
+          const ph = batchIds.map(() => '?').join(',');
+          await db.query(
+            `UPDATE batch_deliveries SET driver_id = ?, updated_at = NOW()
+             WHERE id IN (${ph})`,
+            [driver_id, ...batchIds]
+          );
+        }
+      } catch (_) {}
+    }
+
+    console.log(`✅ Job #${job_id} diterima oleh driver #${driver_id}`);
+    return res.json({
+      success: true,
+      message: 'Job berhasil diterima! Silakan ambil paket di alamat pickup.',
+      job: {
+        id: job.id,
+        pickup_name: job.pickup_name,
+        pickup_address: job.pickup_address,
+        notes: job.notes,
+        batch_ids: job.batch_ids,
+      },
+    });
+
+  } catch (err) {
+    console.error('❌ accept-job error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
 
 /**
