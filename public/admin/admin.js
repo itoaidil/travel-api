@@ -32,6 +32,7 @@ let expeditionPricingServices = [];
 let expeditionMinCharges = [];
 let dispatchDrivers = [];
 let dispatchSummaryRows = [];
+let dispatchWilayahRows = [];
 let dispatchSearchableReady = false;
 let dispatchPackagesPage = 1;
 let dispatchPackagesPageSize = 50;
@@ -114,7 +115,10 @@ function bindEvents() {
   document.getElementById('dispatchSearchInput').addEventListener('input', debounce(() => loadBatchDispatchPackages({ resetPage: true }), 350));
   document.getElementById('dispatchReassignSelectedBtn').addEventListener('click', reassignSelectedPackages);
   document.getElementById('dispatchReassignMode').addEventListener('change', updateDispatchReassignHelp);
-  document.getElementById('dispatchReassignKawasanBtn').addEventListener('click', reassignByKawasan);
+  document.getElementById('dispatchReassignWilayahBtn').addEventListener('click', reassignByWilayah);
+  document.getElementById('dispatchWilayahMode').addEventListener('change', toggleDispatchWilayahMode);
+  document.getElementById('dispatchKabupatenValue').addEventListener('change', renderDispatchKecamatanChecklist);
+  document.getElementById('dispatchSelectAllKecamatanBtn').addEventListener('click', toggleDispatchSelectAllKecamatan);
   document.getElementById('dispatchSelectAll').addEventListener('change', toggleDispatchSelectAll);
   document.getElementById('dispatchFilterDriver').addEventListener('change', () => loadBatchDispatchPackages({ resetPage: true }));
   document.getElementById('dispatchFilterKawasan').addEventListener('change', () => loadBatchDispatchPackages({ resetPage: true }));
@@ -134,7 +138,7 @@ function bindEvents() {
     loadBatchDispatchPackages();
   });
   document.getElementById('dispatchSourceDriver').addEventListener('change', () => {
-    fillDispatchKawasanOptions();
+    loadDispatchWilayahByDriver();
     loadBatchDispatchPackages({ resetPage: true });
   });
 
@@ -1563,6 +1567,8 @@ async function loadBatchDispatchPanel() {
       loadBatchDispatchSummary(),
       loadBatchDispatchDeliverySummary(),
     ]);
+    await loadDispatchWilayahByDriver();
+    toggleDispatchWilayahMode();
     updateDispatchReassignHelp();
     await loadBatchDispatchPackages({ resetPage: true });
     initDispatchSearchableCombos();
@@ -1603,7 +1609,7 @@ function initDispatchSearchableCombos() {
   const selectIds = [
     'dispatchSourceDriver',
     'dispatchTargetDriver',
-    'dispatchKawasanValue',
+    'dispatchKabupatenValue',
     'dispatchKawasanTargetDriver',
   ];
 
@@ -1705,7 +1711,6 @@ async function loadBatchDispatchSummary() {
   }
 
   fillDispatchKawasanFilter();
-  fillDispatchKawasanOptions();
 }
 
 async function loadBatchDispatchDeliverySummary() {
@@ -1753,22 +1758,122 @@ function fillDispatchKawasanFilter() {
   if (dispatchSearchableReady) initDispatchSearchableCombos();
 }
 
-function fillDispatchKawasanOptions() {
-  const sourceDriverId = getDispatchSelectValue('dispatchSourceDriver');
-  const kawasanEl = document.getElementById('dispatchKawasanValue');
-  const current = getDispatchSelectValue('dispatchKawasanValue');
+async function loadDispatchWilayahByDriver() {
+  const sourceDriverId = parseInt(getDispatchSelectValue('dispatchSourceDriver'), 10);
+  const kabupatenEl = document.getElementById('dispatchKabupatenValue');
+  const kecamatanListEl = document.getElementById('dispatchKecamatanList');
 
-  const filtered = sourceDriverId
-    ? dispatchSummaryRows.filter((r) => String(r.driver_id) === String(sourceDriverId))
-    : dispatchSummaryRows;
+  if (!sourceDriverId) {
+    dispatchWilayahRows = [];
+    if (kabupatenEl) {
+      kabupatenEl.innerHTML = '<option value="">Pilih driver asal terlebih dahulu</option>';
+    }
+    if (kecamatanListEl) {
+      kecamatanListEl.innerHTML = '<small class="text-muted">Belum ada data kecamatan</small>';
+    }
+    return;
+  }
 
-  const unique = [...new Set(filtered.map((x) => x.kawasan || '(tanpa kawasan)'))].sort();
-  const label = sourceDriverId ? 'Pilih Kawasan' : 'Semua Kawasan (pilih driver untuk mempersempit)';
-  kawasanEl.innerHTML = `<option value="">${label}</option>`
-    + unique.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
-  kawasanEl.value = unique.includes(current) ? current : '';
+  try {
+    if (kabupatenEl) {
+      kabupatenEl.innerHTML = '<option value="">Memuat kabupaten...</option>';
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-wilayah-summary?driver_id=${sourceDriverId}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal memuat data wilayah');
+
+    dispatchWilayahRows = data.data || [];
+    fillDispatchKabupatenOptions();
+    renderDispatchKecamatanChecklist();
+  } catch (error) {
+    dispatchWilayahRows = [];
+    if (kabupatenEl) {
+      kabupatenEl.innerHTML = '<option value="">Gagal memuat kabupaten</option>';
+    }
+    if (kecamatanListEl) {
+      kecamatanListEl.innerHTML = '<small class="text-danger">Gagal memuat kecamatan</small>';
+    }
+    showError(error.message || 'Gagal memuat wilayah driver');
+  }
+}
+
+function fillDispatchKabupatenOptions() {
+  const kabupatenEl = document.getElementById('dispatchKabupatenValue');
+  if (!kabupatenEl) return;
+
+  const current = getDispatchSelectValue('dispatchKabupatenValue');
+  const uniqueKab = [...new Set(dispatchWilayahRows.map((x) => x.nama_kabupaten || '(tanpa kabupaten)'))]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'id'));
+
+  kabupatenEl.innerHTML = '<option value="">Pilih Kabupaten</option>'
+    + uniqueKab.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  kabupatenEl.value = uniqueKab.includes(current) ? current : '';
 
   if (dispatchSearchableReady) initDispatchSearchableCombos();
+}
+
+function renderDispatchKecamatanChecklist() {
+  const kabupaten = getDispatchSelectValue('dispatchKabupatenValue');
+  const listEl = document.getElementById('dispatchKecamatanList');
+  if (!listEl) return;
+
+  if (!dispatchWilayahRows.length) {
+    listEl.innerHTML = '<small class="text-muted">Belum ada data kecamatan</small>';
+    return;
+  }
+
+  const filtered = kabupaten
+    ? dispatchWilayahRows.filter((r) => (r.nama_kabupaten || '(tanpa kabupaten)') === kabupaten)
+    : dispatchWilayahRows;
+
+  const uniqueKec = [...new Set(filtered.map((x) => x.nama_kecamatan || '(tanpa kecamatan)'))]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'id'));
+
+  if (!uniqueKec.length) {
+    listEl.innerHTML = '<small class="text-muted">Tidak ada data kecamatan</small>';
+    return;
+  }
+
+  listEl.innerHTML = uniqueKec.map((kec) => `
+    <div class="form-check">
+      <input class="form-check-input dispatch-kecamatan-check" type="checkbox" value="${escapeHtml(kec)}" id="dispatchKec_${encodeURIComponent(kec)}">
+      <label class="form-check-label" for="dispatchKec_${encodeURIComponent(kec)}">${escapeHtml(kec)}</label>
+    </div>
+  `).join('');
+}
+
+function toggleDispatchSelectAllKecamatan() {
+  const checks = Array.from(document.querySelectorAll('.dispatch-kecamatan-check'));
+  if (!checks.length) return;
+
+  const allChecked = checks.every((el) => el.checked);
+  checks.forEach((el) => {
+    el.checked = !allChecked;
+  });
+
+  const btn = document.getElementById('dispatchSelectAllKecamatanBtn');
+  if (btn) {
+    btn.textContent = allChecked ? 'Pilih Semua' : 'Batal Pilih Semua';
+  }
+}
+
+function getSelectedDispatchKecamatan() {
+  return [...new Set(
+    Array.from(document.querySelectorAll('.dispatch-kecamatan-check:checked'))
+      .map((el) => String(el.value || '').trim())
+      .filter(Boolean)
+  )];
+}
+
+function toggleDispatchWilayahMode() {
+  const mode = getDispatchSelectValue('dispatchWilayahMode') || 'kabupaten';
+  const kecamatanGroup = document.getElementById('dispatchKecamatanGroup');
+  if (!kecamatanGroup) return;
+
+  kecamatanGroup.style.display = mode === 'kecamatan' ? '' : 'none';
 }
 
 async function loadBatchDispatchPackages(options = {}) {
@@ -1909,38 +2014,65 @@ async function reassignSelectedPackages() {
   }
 }
 
-async function reassignByKawasan() {
+async function reassignByWilayah() {
   try {
     const sourceDriverId = parseInt(getDispatchSelectValue('dispatchSourceDriver'), 10);
-    const kawasan = getDispatchSelectValue('dispatchKawasanValue');
+    const mode = getDispatchSelectValue('dispatchWilayahMode') || 'kabupaten';
+    const kabupaten = getDispatchSelectValue('dispatchKabupatenValue');
+    const kecamatanList = getSelectedDispatchKecamatan();
     const targetDriverId = parseInt(getDispatchSelectValue('dispatchKawasanTargetDriver'), 10);
 
-    if (!sourceDriverId || !kawasan || !targetDriverId) {
-      showError('Lengkapi driver asal, kawasan, dan driver tujuan');
+    if (!sourceDriverId || !targetDriverId) {
+      showError('Lengkapi driver asal dan driver tujuan');
       return;
     }
     if (sourceDriverId === targetDriverId) {
       showError('Driver asal dan tujuan tidak boleh sama');
       return;
     }
-    if (!confirm(`Pindahkan semua paket assigned di kawasan "${kawasan}" ke driver tujuan?`)) return;
+
+    const payload = {
+      target_driver_id: targetDriverId,
+      source_driver_id: sourceDriverId,
+      wilayah_type: mode,
+    };
+
+    let confirmText = '';
+    if (mode === 'kabupaten') {
+      if (!kabupaten) {
+        showError('Pilih kabupaten yang akan dipindahkan');
+        return;
+      }
+      payload.kabupaten = kabupaten;
+      confirmText = `Pindahkan semua paket assigned di kabupaten "${kabupaten}" ke driver tujuan?`;
+    } else {
+      if (!kecamatanList.length) {
+        showError('Centang minimal 1 kecamatan');
+        return;
+      }
+      payload.kecamatan_list = kecamatanList;
+      if (kabupaten) payload.kabupaten = kabupaten;
+      confirmText = `Pindahkan paket assigned dari ${kecamatanList.length} kecamatan ke driver tujuan?`;
+    }
+
+    if (!confirm(confirmText)) return;
 
     const res = await fetch(`${API_BASE_URL}/api/batch-delivery/reassign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        target_driver_id: targetDriverId,
-        source_driver_id: sourceDriverId,
-        kawasan,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Gagal reassign per kawasan');
+    if (!data.success) throw new Error(data.message || 'Gagal reassign per wilayah');
 
-    showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket untuk kawasan ${kawasan}`);
+    if (mode === 'kabupaten') {
+      showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket untuk kabupaten ${kabupaten}`);
+    } else {
+      showSuccess(`Berhasil memindahkan ${data.data?.moved || 0} paket untuk ${kecamatanList.length} kecamatan`);
+    }
     await loadBatchDispatchPanel();
   } catch (error) {
-    showError(error.message || 'Gagal reassign kawasan');
+    showError(error.message || 'Gagal reassign wilayah');
   }
 }
 

@@ -420,6 +420,41 @@ router.get('/assigned-summary', async (req, res) => {
 });
 
 /**
+ * GET /api/batch-delivery/assigned-wilayah-summary
+ * Summary assignment per driver grouped by kabupaten + kecamatan.
+ * Query: driver_id (required)
+ */
+router.get('/assigned-wilayah-summary', async (req, res) => {
+  const db = req.db;
+  if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
+
+  try {
+    const driverId = parseInt(req.query.driver_id, 10);
+    if (!driverId) {
+      return res.status(400).json({ success: false, message: 'driver_id wajib diisi' });
+    }
+
+    const [rows] = await db.query(
+      `SELECT
+         COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)') AS nama_kabupaten,
+         COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)') AS nama_kecamatan,
+         COUNT(*) AS total_packages
+       FROM batch_deliveries
+       WHERE status = 'assigned' AND driver_id = ?
+       GROUP BY
+         COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)'),
+         COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)')
+       ORDER BY nama_kabupaten ASC, nama_kecamatan ASC`,
+      [driverId]
+    );
+
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /api/batch-delivery/delivery-summary
  * Rekap paket yang sudah terkirim (status delivered) per driver.
  */
@@ -547,6 +582,8 @@ router.get('/assigned-list', async (req, res) => {
  * Mode B (per penerima): { target_driver_id, source_driver_id, recipient_names: ['Nama 1'] }
  * Mode C (per package id): { target_driver_id, package_ids: [1,2,3] }
  * Mode D (per kawasan): { target_driver_id, source_driver_id, kawasan }
+ * Mode E (per kabupaten): { target_driver_id, source_driver_id, wilayah_type: 'kabupaten', kabupaten }
+ * Mode F (per kecamatan): { target_driver_id, source_driver_id, wilayah_type: 'kecamatan', kecamatan_list: ['Cikupa'], kabupaten? }
  */
 router.post('/reassign', async (req, res) => {
   const db = req.db;
@@ -560,6 +597,9 @@ router.post('/reassign', async (req, res) => {
       package_ids,
       source_driver_id,
       kawasan,
+      wilayah_type,
+      kabupaten,
+      kecamatan_list,
     } = req.body || {};
 
     const toDriver = parseInt(target_driver_id, 10);
@@ -648,30 +688,99 @@ router.post('/reassign', async (req, res) => {
       mode = 'package';
     } else {
       const fromDriver = parseInt(source_driver_id, 10);
-      if (!fromDriver || !kawasan) {
+      if (!fromDriver) {
         return res.status(400).json({
           success: false,
-          message: 'Untuk mode kawasan, source_driver_id dan kawasan wajib diisi',
+          message: 'source_driver_id wajib diisi untuk mode wilayah',
         });
       }
 
-      if (kawasan === '(tanpa kawasan)') {
+      if (wilayah_type === 'kabupaten') {
+        const kab = String(kabupaten || '').trim();
+        if (!kab) {
+          return res.status(400).json({ success: false, message: 'kabupaten wajib diisi' });
+        }
+
+        if (kab === '(tanpa kabupaten)') {
+          [result] = await db.query(
+            `UPDATE batch_deliveries
+             SET driver_id = ?, assigned_at = NOW()
+             WHERE status = 'assigned' AND driver_id = ?
+               AND (nama_kabupaten IS NULL OR TRIM(nama_kabupaten) = '')`,
+            [toDriver, fromDriver]
+          );
+        } else {
+          [result] = await db.query(
+            `UPDATE batch_deliveries
+             SET driver_id = ?, assigned_at = NOW()
+             WHERE status = 'assigned' AND driver_id = ?
+               AND COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)') = ?`,
+            [toDriver, fromDriver, kab]
+          );
+        }
+        mode = 'kabupaten';
+      } else if (wilayah_type === 'kecamatan') {
+        const kecamatanList = Array.isArray(kecamatan_list)
+          ? [...new Set(kecamatan_list.map((x) => String(x || '').trim()).filter(Boolean))]
+          : [];
+
+        if (!kecamatanList.length) {
+          return res.status(400).json({ success: false, message: 'kecamatan_list wajib diisi minimal 1 kecamatan' });
+        }
+
+        const where = [
+          "status = 'assigned'",
+          'driver_id = ?',
+        ];
+        const bind = [toDriver, fromDriver];
+
+        const placeholders = kecamatanList.map(() => '?').join(',');
+        where.push(`COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)') IN (${placeholders})`);
+        bind.push(...kecamatanList);
+
+        const kab = String(kabupaten || '').trim();
+        if (kab) {
+          if (kab === '(tanpa kabupaten)') {
+            where.push('(nama_kabupaten IS NULL OR TRIM(nama_kabupaten) = \'\')');
+          } else {
+            where.push("COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)') = ?");
+            bind.push(kab);
+          }
+        }
+
         [result] = await db.query(
           `UPDATE batch_deliveries
            SET driver_id = ?, assigned_at = NOW()
-           WHERE status = 'assigned' AND driver_id = ?
-             AND (kawasan IS NULL OR TRIM(kawasan) = '')`,
-          [toDriver, fromDriver]
+           WHERE ${where.join(' AND ')}`,
+          bind
         );
+        mode = 'kecamatan';
       } else {
-        [result] = await db.query(
-          `UPDATE batch_deliveries
-           SET driver_id = ?, assigned_at = NOW()
-           WHERE status = 'assigned' AND driver_id = ? AND kawasan = ?`,
-          [toDriver, fromDriver, kawasan]
-        );
+        if (!kawasan) {
+          return res.status(400).json({
+            success: false,
+            message: 'Untuk mode kawasan, source_driver_id dan kawasan wajib diisi',
+          });
+        }
+
+        if (kawasan === '(tanpa kawasan)') {
+          [result] = await db.query(
+            `UPDATE batch_deliveries
+             SET driver_id = ?, assigned_at = NOW()
+             WHERE status = 'assigned' AND driver_id = ?
+               AND (kawasan IS NULL OR TRIM(kawasan) = '')`,
+            [toDriver, fromDriver]
+          );
+        } else {
+          [result] = await db.query(
+            `UPDATE batch_deliveries
+             SET driver_id = ?, assigned_at = NOW()
+             WHERE status = 'assigned' AND driver_id = ? AND kawasan = ?`,
+            [toDriver, fromDriver, kawasan]
+          );
+        }
+        mode = 'kawasan';
       }
-      mode = 'kawasan';
     }
 
     res.json({

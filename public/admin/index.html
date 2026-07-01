@@ -977,22 +977,39 @@
 
                                 <div class="col-lg-5">
                                     <div class="border rounded p-3 bg-light mb-3">
-                                        <h6 class="fw-semibold mb-2">Reassign Per Kawasan</h6>
+                                        <h6 class="fw-semibold mb-2">Reassign Per Wilayah</h6>
                                         <div class="row g-2">
+                                            <div class="col-12">
+                                                <label class="form-label">Mode Wilayah</label>
+                                                <select class="form-select form-select-sm" id="dispatchWilayahMode">
+                                                    <option value="kabupaten">Per Kabupaten</option>
+                                                    <option value="kecamatan">Per Kecamatan (multi pilih)</option>
+                                                </select>
+                                            </div>
                                             <div class="col-12">
                                                 <label class="form-label">Driver Asal</label>
                                                 <select class="form-select form-select-sm" id="dispatchSourceDriver"></select>
                                             </div>
                                             <div class="col-12">
-                                                <label class="form-label">Kawasan</label>
-                                                <select class="form-select form-select-sm" id="dispatchKawasanValue"></select>
+                                                <label class="form-label">Kabupaten</label>
+                                                <select class="form-select form-select-sm" id="dispatchKabupatenValue"></select>
+                                            </div>
+                                            <div class="col-12" id="dispatchKecamatanGroup">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <label class="form-label mb-0">Pilih Kecamatan</label>
+                                                    <button type="button" class="btn btn-link btn-sm p-0" id="dispatchSelectAllKecamatanBtn">Pilih Semua</button>
+                                                </div>
+                                                <div class="border rounded bg-white px-2 py-2" id="dispatchKecamatanList" style="max-height: 170px; overflow-y: auto;">
+                                                    <small class="text-muted">Belum ada data kecamatan</small>
+                                                </div>
+                                                <small class="text-muted">Centang satu atau lebih kecamatan yang akan dipindahkan.</small>
                                             </div>
                                             <div class="col-12">
                                                 <label class="form-label">Driver Tujuan</label>
                                                 <select class="form-select form-select-sm" id="dispatchKawasanTargetDriver"></select>
                                             </div>
                                             <div class="col-12">
-                                                <button type="button" class="btn btn-success w-100" id="dispatchReassignKawasanBtn">Pindahkan 1 Kawasan</button>
+                                                <button type="button" class="btn btn-success w-100" id="dispatchReassignWilayahBtn">Submit Reassign Wilayah</button>
                                             </div>
                                         </div>
                                     </div>
