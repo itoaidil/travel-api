@@ -1673,9 +1673,16 @@ async function loadBatchDispatchDrivers() {
   const opts = dispatchDrivers.map((d) =>
     `<option value="${d.id}">${escapeHtml(d.full_name || `Driver #${d.id}`)} (${escapeHtml(d.status || '-')})</option>`
   ).join('');
+  const sourceOpts = [
+    '<option value="all">Semua Driver Asal (termasuk yang belum ada driver)</option>',
+    '<option value="unassigned">Hanya Data Belum Ada Driver</option>',
+    ...dispatchDrivers.map((d) =>
+      `<option value="${d.id}">${escapeHtml(d.full_name || `Driver #${d.id}`)} (${escapeHtml(d.status || '-')})</option>`
+    ),
+  ].join('');
 
   filterDriver.innerHTML = baseOption + opts;
-  sourceDriver.innerHTML = '<option value="">Pilih Driver Asal</option>' + opts;
+  sourceDriver.innerHTML = sourceOpts;
   targetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
   kawasanTargetDriver.innerHTML = '<option value="">Pilih Driver Tujuan</option>' + opts;
 
@@ -1759,27 +1766,26 @@ function fillDispatchKawasanFilter() {
 }
 
 async function loadDispatchWilayahByDriver() {
-  const sourceDriverId = parseInt(getDispatchSelectValue('dispatchSourceDriver'), 10);
+  const sourceDriverValue = getDispatchSelectValue('dispatchSourceDriver') || 'all';
+  const sourceDriverId = parseInt(sourceDriverValue, 10);
   const kabupatenEl = document.getElementById('dispatchKabupatenValue');
   const kecamatanListEl = document.getElementById('dispatchKecamatanList');
-
-  if (!sourceDriverId) {
-    dispatchWilayahRows = [];
-    if (kabupatenEl) {
-      kabupatenEl.innerHTML = '<option value="">Pilih driver asal terlebih dahulu</option>';
-    }
-    if (kecamatanListEl) {
-      kecamatanListEl.innerHTML = '<small class="text-muted">Belum ada data kecamatan</small>';
-    }
-    return;
-  }
 
   try {
     if (kabupatenEl) {
       kabupatenEl.innerHTML = '<option value="">Memuat kabupaten...</option>';
     }
 
-    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-wilayah-summary?driver_id=${sourceDriverId}`);
+    const params = new URLSearchParams();
+    if (sourceDriverValue === 'unassigned') {
+      params.set('scope', 'unassigned');
+    } else if (Number.isInteger(sourceDriverId) && sourceDriverId > 0) {
+      params.set('driver_id', String(sourceDriverId));
+    } else {
+      params.set('scope', 'all');
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/batch-delivery/assigned-wilayah-summary?${params.toString()}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal memuat data wilayah');
 
@@ -2016,26 +2022,37 @@ async function reassignSelectedPackages() {
 
 async function reassignByWilayah() {
   try {
-    const sourceDriverId = parseInt(getDispatchSelectValue('dispatchSourceDriver'), 10);
+    const sourceDriverValue = getDispatchSelectValue('dispatchSourceDriver') || 'all';
+    const sourceDriverId = parseInt(sourceDriverValue, 10);
     const mode = getDispatchSelectValue('dispatchWilayahMode') || 'kabupaten';
     const kabupaten = getDispatchSelectValue('dispatchKabupatenValue');
     const kecamatanList = getSelectedDispatchKecamatan();
     const targetDriverId = parseInt(getDispatchSelectValue('dispatchKawasanTargetDriver'), 10);
 
-    if (!sourceDriverId || !targetDriverId) {
-      showError('Lengkapi driver asal dan driver tujuan');
+    if (!targetDriverId) {
+      showError('Pilih driver tujuan terlebih dahulu');
       return;
     }
-    if (sourceDriverId === targetDriverId) {
+    if (Number.isInteger(sourceDriverId) && sourceDriverId > 0 && sourceDriverId === targetDriverId) {
       showError('Driver asal dan tujuan tidak boleh sama');
       return;
     }
 
     const payload = {
       target_driver_id: targetDriverId,
-      source_driver_id: sourceDriverId,
       wilayah_type: mode,
     };
+
+    let sourceLabel = 'semua driver asal';
+    if (sourceDriverValue === 'unassigned') {
+      payload.source_scope = 'unassigned';
+      sourceLabel = 'data tanpa driver';
+    } else if (Number.isInteger(sourceDriverId) && sourceDriverId > 0) {
+      payload.source_driver_id = sourceDriverId;
+      sourceLabel = 'driver asal terpilih';
+    } else {
+      payload.source_scope = 'all';
+    }
 
     let confirmText = '';
     if (mode === 'kabupaten') {
@@ -2044,7 +2061,7 @@ async function reassignByWilayah() {
         return;
       }
       payload.kabupaten = kabupaten;
-      confirmText = `Pindahkan semua paket assigned di kabupaten "${kabupaten}" ke driver tujuan?`;
+      confirmText = `Pindahkan semua paket assigned di kabupaten "${kabupaten}" dari ${sourceLabel} ke driver tujuan?`;
     } else {
       if (!kecamatanList.length) {
         showError('Centang minimal 1 kecamatan');
@@ -2052,7 +2069,7 @@ async function reassignByWilayah() {
       }
       payload.kecamatan_list = kecamatanList;
       if (kabupaten) payload.kabupaten = kabupaten;
-      confirmText = `Pindahkan paket assigned dari ${kecamatanList.length} kecamatan ke driver tujuan?`;
+      confirmText = `Pindahkan paket assigned dari ${kecamatanList.length} kecamatan (${sourceLabel}) ke driver tujuan?`;
     }
 
     if (!confirm(confirmText)) return;

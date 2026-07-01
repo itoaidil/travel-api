@@ -977,7 +977,10 @@
 
                                 <div class="col-lg-5">
                                     <div class="border rounded p-3 bg-light mb-3">
-                                        <h6 class="fw-semibold mb-2">Reassign Per Wilayah</h6>
+                                        <h6 class="fw-semibold mb-2">Panel Mass Reassign Per Wilayah</h6>
+                                        <div class="alert alert-info py-2 px-3 small mb-2">
+                                            Gunakan panel ini untuk pindahkan banyak data berdasarkan wilayah tanpa centang NPP satu-satu.
+                                        </div>
                                         <div class="row g-2">
                                             <div class="col-12">
                                                 <label class="form-label">Mode Wilayah</label>
@@ -987,8 +990,9 @@
                                                 </select>
                                             </div>
                                             <div class="col-12">
-                                                <label class="form-label">Driver Asal</label>
+                                                <label class="form-label">Driver Asal (opsional)</label>
                                                 <select class="form-select form-select-sm" id="dispatchSourceDriver"></select>
+                                                <small class="text-muted">Pilih sumber data: semua driver, hanya data tanpa driver, atau driver tertentu.</small>
                                             </div>
                                             <div class="col-12">
                                                 <label class="form-label">Kabupaten</label>
@@ -1009,7 +1013,7 @@
                                                 <select class="form-select form-select-sm" id="dispatchKawasanTargetDriver"></select>
                                             </div>
                                             <div class="col-12">
-                                                <button type="button" class="btn btn-success w-100" id="dispatchReassignWilayahBtn">Submit Reassign Wilayah</button>
+                                                <button type="button" class="btn btn-success w-100" id="dispatchReassignWilayahBtn">Submit Mass Reassign Wilayah</button>
                                             </div>
                                         </div>
                                     </div>

@@ -422,16 +422,24 @@ router.get('/assigned-summary', async (req, res) => {
 /**
  * GET /api/batch-delivery/assigned-wilayah-summary
  * Summary assignment per driver grouped by kabupaten + kecamatan.
- * Query: driver_id (required)
+ * Query: driver_id (optional), scope=all|unassigned (optional)
  */
 router.get('/assigned-wilayah-summary', async (req, res) => {
   const db = req.db;
   if (!db) return res.status(500).json({ success: false, message: 'Database not available' });
 
   try {
+    const scope = String(req.query.scope || '').trim().toLowerCase();
     const driverId = parseInt(req.query.driver_id, 10);
-    if (!driverId) {
-      return res.status(400).json({ success: false, message: 'driver_id wajib diisi' });
+
+    const where = ["status = 'assigned'"];
+    const params = [];
+
+    if (scope === 'unassigned') {
+      where.push('driver_id IS NULL');
+    } else if (driverId) {
+      where.push('driver_id = ?');
+      params.push(driverId);
     }
 
     const [rows] = await db.query(
@@ -440,12 +448,12 @@ router.get('/assigned-wilayah-summary', async (req, res) => {
          COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)') AS nama_kecamatan,
          COUNT(*) AS total_packages
        FROM batch_deliveries
-       WHERE status = 'assigned' AND driver_id = ?
+       WHERE ${where.join(' AND ')}
        GROUP BY
          COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)'),
          COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)')
        ORDER BY nama_kabupaten ASC, nama_kecamatan ASC`,
-      [driverId]
+      params
     );
 
     return res.json({ success: true, data: rows });
@@ -582,8 +590,8 @@ router.get('/assigned-list', async (req, res) => {
  * Mode B (per penerima): { target_driver_id, source_driver_id, recipient_names: ['Nama 1'] }
  * Mode C (per package id): { target_driver_id, package_ids: [1,2,3] }
  * Mode D (per kawasan): { target_driver_id, source_driver_id, kawasan }
- * Mode E (per kabupaten): { target_driver_id, source_driver_id, wilayah_type: 'kabupaten', kabupaten }
- * Mode F (per kecamatan): { target_driver_id, source_driver_id, wilayah_type: 'kecamatan', kecamatan_list: ['Cikupa'], kabupaten? }
+ * Mode E (per kabupaten): { target_driver_id, wilayah_type: 'kabupaten', kabupaten, source_driver_id?, source_scope? }
+ * Mode F (per kecamatan): { target_driver_id, wilayah_type: 'kecamatan', kecamatan_list: ['Cikupa'], kabupaten?, source_driver_id?, source_scope? }
  */
 router.post('/reassign', async (req, res) => {
   const db = req.db;
@@ -600,6 +608,7 @@ router.post('/reassign', async (req, res) => {
       wilayah_type,
       kabupaten,
       kecamatan_list,
+      source_scope,
     } = req.body || {};
 
     const toDriver = parseInt(target_driver_id, 10);
@@ -688,11 +697,15 @@ router.post('/reassign', async (req, res) => {
       mode = 'package';
     } else {
       const fromDriver = parseInt(source_driver_id, 10);
-      if (!fromDriver) {
-        return res.status(400).json({
-          success: false,
-          message: 'source_driver_id wajib diisi untuk mode wilayah',
-        });
+      const sourceScope = String(source_scope || '').trim().toLowerCase();
+      const sourceWhere = [];
+      const sourceParams = [];
+
+      if (fromDriver) {
+        sourceWhere.push('driver_id = ?');
+        sourceParams.push(fromDriver);
+      } else if (sourceScope === 'unassigned') {
+        sourceWhere.push('driver_id IS NULL');
       }
 
       if (wilayah_type === 'kabupaten') {
@@ -701,23 +714,22 @@ router.post('/reassign', async (req, res) => {
           return res.status(400).json({ success: false, message: 'kabupaten wajib diisi' });
         }
 
+        const where = ["status = 'assigned'", ...sourceWhere];
+        const bind = [toDriver, ...sourceParams];
+
         if (kab === '(tanpa kabupaten)') {
-          [result] = await db.query(
-            `UPDATE batch_deliveries
-             SET driver_id = ?, assigned_at = NOW()
-             WHERE status = 'assigned' AND driver_id = ?
-               AND (nama_kabupaten IS NULL OR TRIM(nama_kabupaten) = '')`,
-            [toDriver, fromDriver]
-          );
+          where.push('(nama_kabupaten IS NULL OR TRIM(nama_kabupaten) = \'\')');
         } else {
-          [result] = await db.query(
-            `UPDATE batch_deliveries
-             SET driver_id = ?, assigned_at = NOW()
-             WHERE status = 'assigned' AND driver_id = ?
-               AND COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)') = ?`,
-            [toDriver, fromDriver, kab]
-          );
+          where.push("COALESCE(NULLIF(TRIM(nama_kabupaten), ''), '(tanpa kabupaten)') = ?");
+          bind.push(kab);
         }
+
+        [result] = await db.query(
+          `UPDATE batch_deliveries
+           SET driver_id = ?, assigned_at = NOW()
+           WHERE ${where.join(' AND ')}`,
+          bind
+        );
         mode = 'kabupaten';
       } else if (wilayah_type === 'kecamatan') {
         const kecamatanList = Array.isArray(kecamatan_list)
@@ -730,9 +742,9 @@ router.post('/reassign', async (req, res) => {
 
         const where = [
           "status = 'assigned'",
-          'driver_id = ?',
+          ...sourceWhere,
         ];
-        const bind = [toDriver, fromDriver];
+        const bind = [toDriver, ...sourceParams];
 
         const placeholders = kecamatanList.map(() => '?').join(',');
         where.push(`COALESCE(NULLIF(TRIM(nama_kecamatan), ''), '(tanpa kecamatan)') IN (${placeholders})`);
@@ -759,26 +771,26 @@ router.post('/reassign', async (req, res) => {
         if (!kawasan) {
           return res.status(400).json({
             success: false,
-            message: 'Untuk mode kawasan, source_driver_id dan kawasan wajib diisi',
+            message: 'Untuk mode kawasan, kawasan wajib diisi',
           });
         }
 
+        const where = ["status = 'assigned'", ...sourceWhere];
+        const bind = [toDriver, ...sourceParams];
+
         if (kawasan === '(tanpa kawasan)') {
-          [result] = await db.query(
-            `UPDATE batch_deliveries
-             SET driver_id = ?, assigned_at = NOW()
-             WHERE status = 'assigned' AND driver_id = ?
-               AND (kawasan IS NULL OR TRIM(kawasan) = '')`,
-            [toDriver, fromDriver]
-          );
+          where.push("(kawasan IS NULL OR TRIM(kawasan) = '')");
         } else {
-          [result] = await db.query(
-            `UPDATE batch_deliveries
-             SET driver_id = ?, assigned_at = NOW()
-             WHERE status = 'assigned' AND driver_id = ? AND kawasan = ?`,
-            [toDriver, fromDriver, kawasan]
-          );
+          where.push('kawasan = ?');
+          bind.push(kawasan);
         }
+
+        [result] = await db.query(
+          `UPDATE batch_deliveries
+           SET driver_id = ?, assigned_at = NOW()
+           WHERE ${where.join(' AND ')}`,
+          bind
+        );
         mode = 'kawasan';
       }
     }
